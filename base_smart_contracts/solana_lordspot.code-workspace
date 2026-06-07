@@ -1,0 +1,24 @@
+{
+    "folders": [
+      {
+        "name": "📦 Root Monorepo",
+        "path": "."
+      },
+      {
+        "name": "⛓️ EVM Smart Contracts",
+        "path": "base_smart_contracts"
+      },
+      {
+        "name": "🦀 Solana Smart Contracts",
+        "path": "solana_smart_contracts"
+      },
+      {
+        "name": "💻 Frontend UI",
+        "path": "frontend"
+      }
+    ],
+    "settings": {
+      "solidity.compileUsingRemoteVersion": "latest",
+      "solidity.packageDefaultDependenciesContractsDirectory": "lib"
+    }
+  }

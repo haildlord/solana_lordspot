@@ -2,7 +2,8 @@
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "build:program": "anchor build && cp ./target/idl/solana_smart_contracts.json ../backend/solana_idl"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1"
