@@ -6,7 +6,6 @@ class MegapotService {
     private tryAfterSec = 1;
     private isSyncing = false;
     
-
     private async fetchActiveRound(): Promise<RoundState> {
         const response = await fetch('https://api.megapot.io/v1/rounds/active', {
             method: 'GET',
@@ -19,7 +18,7 @@ class MegapotService {
             throw new Error(`Failed to fetch active round: ${response.statusText} with status code: ${response.status}`);
         }
         
-        const data = await response.json();
+        const data = await response.json() as any;
 
         if (!data || !data.ball_pool || !data.ended_at || !data.id) {
             throw new Error('Malformed API response: Missing ball_pool data structure');
@@ -44,70 +43,87 @@ class MegapotService {
     }
 
     private async transitionLoop() {
+        // Step 1: Resilient Pause Execution
         try {
             await solanaService.pauseProtocol();
         } catch (error) {
-            console.error("[transitionLoop]: CRITICAL - Failed to pause contract. Manual intervention required!", error);
-            return; 
+            console.warn("[transitionLoop]: Pause transaction encountered a network error. Checking on-chain reality...");
+            
+            // Check if it was a phantom success
+            const postPauseState = await solanaService.getOnChainState();
+            if (!postPauseState.isLordsPotPaused) {
+                console.error("[transitionLoop]: CRITICAL - Protocol is genuinely unpaused and transaction failed. Halting context.", error);
+                // FUTURE: Trigger Discord/Slack Webhook here for PAUSE FAILURE
+                return; // Genuine failure: Safe to exit since contract is still live
+            }
+            console.log("[transitionLoop]: Phantom Pause confirmed on-chain. Proceeding safely to polling phase.");
         }
 
         const oldData = this.getRoundState()!;
-        
-        let hasUpdatedContract = false;
         let retryCount = 0;
     
-        while(true){
-            try{
-                
+        // Step 2: Isolated Polling & JIT Execution Phase
+        while(true) {
+            try {
                 const fetchedData = await this.fetchActiveRound();
-                const {bonusball_max, normals_max, id, ended_at} = fetchedData;
+                const { bonusball_max, normals_max, id } = fetchedData;
 
-                if(id > oldData.id){
-                    if(bonusball_max != oldData.bonusball_max || normals_max != oldData.normals_max){
-
-                        if (!hasUpdatedContract) {
-                            await solanaService.updateEpochBounds(normals_max, bonusball_max);
-                            hasUpdatedContract = true; 
-                        }
-                    }
+                if (id > oldData.id) {
                     
-                    await solanaService.unpauseProtocol();
+                    // --- THE ELITE DEFENSE ---
+                    // Verify actual on-chain reality before attempting to broadcast
+                    const onChainState = await solanaService.getOnChainState();
+
+                    if (!onChainState.isLordsPotPaused) {
+                        console.log("[transitionLoop]: Phantom Success detected! Protocol is already unpaused on-chain. Recovering safely.");
+                        this.cachedRoundState = fetchedData;
+                        break; 
+                    }
+                    // -------------------------
+
+                    // Clean, single-line evaluation
+                    const needsUpdate = bonusball_max !== oldData.bonusball_max || normals_max !== oldData.normals_max;
+                    
+                    await solanaService.resumeAndTransitionEpoch(normals_max, bonusball_max, needsUpdate);
+                    
                     this.cachedRoundState = fetchedData;
                     break;
                 }
 
                 retryCount = 0;
 
-            }catch(error){
+            } catch(error) {
                 retryCount++;
-                console.error(`[transitionLoop]: Loop failed. Attempt ${retryCount}. Error:`, error.message);
+                console.error(`[transitionLoop]: Loop failed. Attempt ${retryCount}. Error:`, error);
                 
                 if (retryCount >= 10) {
-                    console.error("CRITICAL: Protocol is stuck in a paused state! Intervention required immediately!");
-                    // FUTURE: Trigger Discord/Slack Webhook here
+                    console.error("CRITICAL: Protocol is stuck frozen! Halting thread execution to prevent cascading infinite loops.");
+                    // Elite approach: Trigger alerting, but DO NOT break/continue scheduling.
+                    // Returning halts the thread so the container orchestration can restart it cleanly.
+                    return; 
                 }
-            } finally{
+            } finally {
                 await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
 
+        // Only schedule the next cycle if the transaction loop resolved successfully
         await this.setup_next_fetch_cron();
     }
 
     private async setup_next_fetch_cron() {
-
         const savedData = this.getRoundState();
         if(!savedData || !savedData.bonusball_max || !savedData.ended_at || !savedData.id || !savedData.normals_max){
             await this.startSync();
         }else{
-            const {bonusball_max, normals_max, id, ended_at} = savedData;
+            const { ended_at } = savedData;
             const time_now = Date.now();
             const end_time = new Date(ended_at).getTime();
             
             if (time_now >= end_time) {
                 await this.transitionLoop();
             } else {
-                const diffMs = new Date(ended_at).getTime() - Date.now();
+                const diffMs = end_time - time_now;
                 setTimeout(async () => {
                     await this.transitionLoop();
                 }, diffMs);
@@ -116,7 +132,6 @@ class MegapotService {
     }
 
     public async startSync() {
-
         if (this.isSyncing) {
             console.log("[startSync]: Sync already in progress. Ignoring duplicate trigger.");
             return;

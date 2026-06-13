@@ -1,14 +1,20 @@
-{
+/**
+ * Program IDL in camelCase format in order to be used in JS/TS.
+ *
+ * Note that this is only a type helper and is not the actual IDL. The original
+ * IDL can be found at `target/idl/solana_smart_contracts.json`.
+ */
+export type SolanaSmartContracts = {
   "address": "6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9",
   "metadata": {
-    "name": "solana_smart_contracts",
+    "name": "solanaSmartContracts",
     "version": "0.1.0",
     "spec": "0.1.0",
     "description": "Created with Anchor"
   },
   "instructions": [
     {
-      "name": "buy_ticket",
+      "name": "buyTicket",
       "discriminator": [
         11,
         24,
@@ -26,7 +32,7 @@
           "signer": true
         },
         {
-          "name": "lords_pot_state",
+          "name": "lordsPotState",
           "pda": {
             "seeds": [
               {
@@ -53,7 +59,7 @@
           }
         },
         {
-          "name": "buyer_usdc_account",
+          "name": "buyerUsdcAccount",
           "writable": true,
           "pda": {
             "seeds": [
@@ -100,7 +106,7 @@
               },
               {
                 "kind": "account",
-                "path": "usdc_mint"
+                "path": "usdcMint"
               }
             ],
             "program": {
@@ -143,13 +149,13 @@
           }
         },
         {
-          "name": "vault_usdc_account",
+          "name": "vaultUsdcAccount",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "account",
-                "path": "vault_authority"
+                "path": "vaultAuthority"
               },
               {
                 "kind": "const",
@@ -190,7 +196,7 @@
               },
               {
                 "kind": "account",
-                "path": "usdc_mint"
+                "path": "usdcMint"
               }
             ],
             "program": {
@@ -233,7 +239,7 @@
           }
         },
         {
-          "name": "vault_authority",
+          "name": "vaultAuthority",
           "pda": {
             "seeds": [
               {
@@ -260,18 +266,18 @@
           }
         },
         {
-          "name": "usdc_mint",
+          "name": "usdcMint",
           "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
         },
         {
-          "name": "system_program",
+          "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "token_program"
+          "name": "tokenProgram"
         },
         {
-          "name": "associated_token_program",
+          "name": "associatedTokenProgram",
           "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         }
       ],
@@ -281,7 +287,7 @@
           "type": {
             "vec": {
               "defined": {
-                "name": "Ticket"
+                "name": "ticket"
               }
             }
           }
@@ -308,7 +314,7 @@
           "address": "AigbEGvypACrUq7hgjNwCDfd8SfcgfTH6esHu8maHysS"
         },
         {
-          "name": "lords_pot_state",
+          "name": "lordsPotState",
           "writable": true,
           "pda": {
             "seeds": [
@@ -336,7 +342,7 @@
           }
         },
         {
-          "name": "vault_authority",
+          "name": "vaultAuthority",
           "pda": {
             "seeds": [
               {
@@ -363,13 +369,13 @@
           }
         },
         {
-          "name": "vault_usdc_account",
+          "name": "vaultUsdcAccount",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "account",
-                "path": "vault_authority"
+                "path": "vaultAuthority"
               },
               {
                 "kind": "const",
@@ -410,7 +416,7 @@
               },
               {
                 "kind": "account",
-                "path": "usdc_mint"
+                "path": "usdcMint"
               }
             ],
             "program": {
@@ -453,38 +459,38 @@
           }
         },
         {
-          "name": "usdc_mint",
+          "name": "usdcMint",
           "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
         },
         {
-          "name": "system_program",
+          "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "token_program"
+          "name": "tokenProgram"
         },
         {
-          "name": "associated_token_program",
+          "name": "associatedTokenProgram",
           "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         }
       ],
       "args": [
         {
-          "name": "normal_max",
+          "name": "normalMax",
           "type": "u8"
         },
         {
-          "name": "bonus_max",
+          "name": "bonusMax",
           "type": "u8"
         },
         {
-          "name": "ticket_price",
+          "name": "ticketPrice",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "pause_protocol",
+      "name": "pauseProtocol",
       "discriminator": [
         144,
         95,
@@ -502,7 +508,7 @@
           "signer": true
         },
         {
-          "name": "lords_pot_state",
+          "name": "lordsPotState",
           "writable": true,
           "pda": {
             "seeds": [
@@ -533,7 +539,7 @@
       "args": []
     },
     {
-      "name": "resume_protocol",
+      "name": "resumeProtocol",
       "discriminator": [
         62,
         91,
@@ -551,7 +557,7 @@
           "signer": true
         },
         {
-          "name": "lords_pot_state",
+          "name": "lordsPotState",
           "writable": true,
           "pda": {
             "seeds": [
@@ -582,7 +588,7 @@
       "args": []
     },
     {
-      "name": "update_epoch",
+      "name": "updateEpoch",
       "discriminator": [
         218,
         126,
@@ -600,7 +606,7 @@
           "signer": true
         },
         {
-          "name": "lords_pot_state",
+          "name": "lordsPotState",
           "writable": true,
           "pda": {
             "seeds": [
@@ -630,11 +636,11 @@
       ],
       "args": [
         {
-          "name": "normal_max",
+          "name": "normalMax",
           "type": "u8"
         },
         {
-          "name": "bonus_max",
+          "name": "bonusMax",
           "type": "u8"
         }
       ]
@@ -642,7 +648,7 @@
   ],
   "accounts": [
     {
-      "name": "LordsPotState",
+      "name": "lordsPotState",
       "discriminator": [
         9,
         156,
@@ -657,7 +663,7 @@
   ],
   "events": [
     {
-      "name": "TicketPurchaseEvent",
+      "name": "ticketPurchaseEvent",
       "discriminator": [
         106,
         28,
@@ -673,76 +679,76 @@
   "errors": [
     {
       "code": 6000,
-      "name": "ProtocolPaused",
+      "name": "protocolPaused",
       "msg": "Ticket sales are frozen during the epoch rollover."
     },
     {
       "code": 6001,
-      "name": "ProtocolNotPaused",
+      "name": "protocolNotPaused",
       "msg": "The protocol is already active and not paused."
     },
     {
       "code": 6002,
-      "name": "Unauthorized",
+      "name": "unauthorized",
       "msg": "You are not authorized to perform this admin action."
     },
     {
       "code": 6003,
-      "name": "NoTicketsProvided",
+      "name": "noTicketsProvided",
       "msg": "You must provide at least one ticket to purchase."
     },
     {
       "code": 6004,
-      "name": "InvalidTicketLength",
+      "name": "invalidTicketLength",
       "msg": "A ticket must contain exactly 5 normal numbers."
     },
     {
       "code": 6005,
-      "name": "NormalBallOutOfBounds",
+      "name": "normalBallOutOfBounds",
       "msg": "A regular number selection exceeds the max allowed for this round."
     },
     {
       "code": 6006,
-      "name": "BonusBallOutOfBounds",
+      "name": "bonusBallOutOfBounds",
       "msg": "The bonus number selection exceeds the max allowed for this round."
     },
     {
       "code": 6007,
-      "name": "BallsNotSortedOrDuplicated",
+      "name": "ballsNotSortedOrDuplicated",
       "msg": "Ticket numbers must be strictly unique and submitted in ascending order."
     },
     {
       "code": 6008,
-      "name": "MathOverflow",
+      "name": "mathOverflow",
       "msg": "A mathematical overflow occurred during price calculation."
     },
     {
       "code": 6009,
-      "name": "TooManyTickets",
+      "name": "tooManyTickets",
       "msg": "You cannot purchase more than 100 tickets in a single transaction."
     },
     {
       "code": 6010,
-      "name": "SameAsPreviousEpoch",
+      "name": "sameAsPreviousEpoch",
       "msg": "Same as values as Previous Epoch"
     }
   ],
   "types": [
     {
-      "name": "LordsPotState",
+      "name": "lordsPotState",
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "normal_max",
+            "name": "normalMax",
             "type": "u8"
           },
           {
-            "name": "bonus_max",
+            "name": "bonusMax",
             "type": "u8"
           },
           {
-            "name": "ticket_price",
+            "name": "ticketPrice",
             "type": "u64"
           },
           {
@@ -750,7 +756,7 @@
             "type": "u8"
           },
           {
-            "name": "is_lords_pot_paused",
+            "name": "isLordsPotPaused",
             "type": "bool"
           },
           {
@@ -761,23 +767,23 @@
       }
     },
     {
-      "name": "Ticket",
+      "name": "ticket",
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "normal_ball",
+            "name": "normalBall",
             "type": "bytes"
           },
           {
-            "name": "bonus_ball",
+            "name": "bonusBall",
             "type": "u8"
           }
         ]
       }
     },
     {
-      "name": "TicketPurchaseEvent",
+      "name": "ticketPurchaseEvent",
       "type": {
         "kind": "struct",
         "fields": [
@@ -786,19 +792,19 @@
             "type": "pubkey"
           },
           {
-            "name": "amount_paid",
+            "name": "amountPaid",
             "type": "u64"
           },
           {
-            "name": "tickets_bought",
+            "name": "ticketsBought",
             "type": "u32"
           },
           {
-            "name": "tickets_data",
+            "name": "ticketsData",
             "type": {
               "vec": {
                 "defined": {
-                  "name": "Ticket"
+                  "name": "ticket"
                 }
               }
             }
@@ -811,4 +817,4 @@
       }
     }
   ]
-}
+};

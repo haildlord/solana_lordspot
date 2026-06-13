@@ -3,19 +3,27 @@
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
-    "build:program": "anchor build && cp ./target/idl/solana_smart_contracts.json ../backend/solana_idl"
+    "build:program": "anchor build && cp ./target/idl/solana_smart_contracts.json ../backend/solana_idl && cp ./target/types/solana_smart_contracts.ts ../backend/solana_types",
+    "start:surfpool": "touch surfnet-state.sqlite && cp surfnet-state.sqlite surfnet-temp.sqlite && surfpool start --rpc-url \"$(grep DEVNET_SOLANA_RPC_URL ./.env | cut -d '=' -f2-)\" --watch --db ./surfnet-temp.sqlite",
+    "commit:surfpool": "cp surfnet-temp.sqlite surfnet-state.sqlite",
+    "deploy:surfpool": "anchor program deploy --provider.cluster http://127.0.0.1:8899",
+    "migrate:surfpool": "anchor migrate --provider.cluster http://127.0.0.1:8899"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.32.1"
+    "@anchor-lang/core": "^1.0.2",
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.14",
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
-    "chai": "^4.3.4",
-    "mocha": "^9.0.3",
-    "ts-mocha": "^10.0.0",
     "@types/bn.js": "^5.1.0",
     "@types/chai": "^4.3.0",
     "@types/mocha": "^9.0.0",
-    "typescript": "^5.7.3",
-    "prettier": "^2.6.2"
+    "@types/node": "^25.9.2",
+    "chai": "^4.3.4",
+    "mocha": "^9.0.3",
+    "prettier": "^2.6.2",
+    "ts-mocha": "^10.0.0",
+    "typescript": "^5.7.3"
   }
 }

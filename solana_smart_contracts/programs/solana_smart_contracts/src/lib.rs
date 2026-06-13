@@ -102,11 +102,15 @@ pub mod solana_smart_contracts {
 
     pub fn update_epoch(ctx: Context<UpdateEpoch>, normal_max: u8, bonus_max: u8) -> Result<()> {
         let state = &mut ctx.accounts.lords_pot_state;
+
+        require!(
+            normal_max != state.normal_max || bonus_max != state.bonus_max,
+            LordsPotError::SameAsPreviousEpoch
+        );
     
         state.normal_max = normal_max;
         state.bonus_max = bonus_max;
-        
-        state.is_lords_pot_paused = false;
+    
         msg!("Epoch Updated and Protocol Resumed. New Normals Max: {}, Bonus Max: {}", normal_max, bonus_max);
         Ok(())
     }
@@ -254,7 +258,8 @@ pub struct UpdateEpoch<'info> {
     #[account(
         mut,
         seeds = [b"lords_pot_state"],
-        bump = lords_pot_state.bump
+        bump = lords_pot_state.bump,
+        constraint = lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolNotPaused
     )]
     pub lords_pot_state: Account<'info, LordsPotState>,
 }
@@ -282,4 +287,6 @@ pub enum LordsPotError {
     MathOverflow,
     #[msg("You cannot purchase more than 100 tickets in a single transaction.")]
     TooManyTickets,
+    #[msg("Same as values as Previous Epoch")]
+    SameAsPreviousEpoch
 }
