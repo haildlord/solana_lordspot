@@ -9,3 +9,4 @@ test-ledger
 .surfpool
 surfnet-temp.sqlite
 surfnet-state.sqlite
+observations.md

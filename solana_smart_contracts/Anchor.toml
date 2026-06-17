@@ -10,7 +10,7 @@ skip-lint = false
 solana_smart_contracts = "6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9"
 
 [provider]
-cluster = "localnet"
+cluster = "https://devnet.helius-rpc.com/?api-key=311a52e8-93ed-49e4-b0c5-acfb3060e402"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

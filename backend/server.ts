@@ -1,9 +1,9 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import quoteRouter from './router/quoteRouter';
-
-dotenv.config();
+import webhookRouter from './router/webhookRouter';
+import "./workers/ticketWorker"
 
 const app = express();
 app.use(express.json());
@@ -18,6 +18,8 @@ app.get(`/health`, (req: Request, res: Response) => {
 });
 
 app.use(`/api`, quoteRouter);
+
+app.use(`/api`, webhookRouter);
 
 const PORT = process.env.PORT || 3000;
 

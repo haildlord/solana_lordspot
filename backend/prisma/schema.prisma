@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Ticket {
+  id  String  @id @default(uuid())  
+  signature   String
+  buyer       String
+  link_to_nft String?
+  bonusBall   Int
+  normalBalls Int[]
+  lastBought  DateTime
+
+  @@index([signature])
+}

@@ -14,6 +14,7 @@ export const quoteController = (req: Request, res: Response) => {
 
 
         const roundState = megapotService.getRoundState();
+
         if (!roundState) {
             return res.status(404).json({ message: 'No active round found' });
         }
@@ -91,7 +92,7 @@ export const quoteController = (req: Request, res: Response) => {
         }
         return res.status(200).json({ message: 'Success form : Quote Controller', roundState });
     
-    }catch (error) {
+    }   catch (error) {
         console.error('Error in quoteController:', error);
         return res.status(500).json({ message: 'Internal server error' });
     }

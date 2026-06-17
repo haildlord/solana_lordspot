@@ -14,62 +14,6 @@ import { configDotenv } from "dotenv";
 
 configDotenv();
 
-// module.exports = async function (provider: anchor.AnchorProvider) {
-//   anchor.setProvider(provider);
-
-//   const connection = provider.connection;
-
-//   // Your program ID
-//   const PROGRAM_ID = new PublicKey("6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9");
-
-//   // Derive PDA
-//   const [lordsPotStatePda] = PublicKey.findProgramAddressSync(
-//     [Buffer.from("lords_pot_state")],
-//     PROGRAM_ID
-//   );
-
-//   console.log("--------------------------------------------------");
-//   console.log(`[PDA] Lords Pot State: ${lordsPotStatePda.toBase58()}`);
-//   console.log("--------------------------------------------------");
-
-//   try {
-//     // =============================================
-//     // Get Priority Fee Estimate from Helius
-//     // =============================================
-//     const response = await fetch(`${process.env.SOLANA_RPC_URL}`, {
-//       method: "POST",
-//       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({
-//         jsonrpc: "2.0",
-//         id: "1",
-//         method: "getPriorityFeeEstimate",
-//         params: [{
-//           options: {
-//            priorityLevel: "Medium",
-//           }
-//         }]
-//       }),
-//     });
-
-//     const data = await response.json() as {
-//       result?: {
-//         priorityFeeEstimate?: number;
-//       };
-//     };
-
-//     console.log("Helius Response:", data);
-
-//     if (data.result?.priorityFeeEstimate) {
-//       console.log(`✅ Estimated Priority Fee: ${data.result.priorityFeeEstimate} microLamports`);
-//     } else {
-//       console.log("⚠️ Could not get priority fee estimate from Helius");
-//     }
-
-//   } catch (error) {
-//     console.error("Error while estimating priority fee:", error);
-//   }
-// };
-
 module.exports = async function (provider: anchor.AnchorProvider) {
   // // 1. Establish the default workspace provider context
   anchor.setProvider(provider);
@@ -90,10 +34,12 @@ module.exports = async function (provider: anchor.AnchorProvider) {
     anchor.AnchorProvider.defaultOptions()
   );
 
-  // // 5. Re-bind the global anchor context to your elite custom provider
+  console.log(provider.connection.rpcEndpoint);
+
+  // 5. Re-bind the global anchor context to your elite custom provider
   anchor.setProvider(customProvider);
 
-  // // 6. Instantiate the program instance using the modern two-argument signature
+  // 6. Instantiate the program instance using the modern two-argument signature
   const program = new Program<SolanaSmartContracts>(idl, customProvider);
 
   // console.log("--------------------------------------------------");
@@ -149,39 +95,82 @@ module.exports = async function (provider: anchor.AnchorProvider) {
   //   throw error;
   // }
 
-  const pauseTx = await program.methods
-  .pauseProtocol()
-  .accounts({
-    admin: solanaKeyPair.publicKey
-  }).rpc();
-  console.log(`[Success]: Megapot Protocol Paused! Transaction: ${pauseTx}`);
+  // const pauseTx = await program.methods
+  // .pauseProtocol()
+  // .accounts({
+  //   admin: solanaKeyPair.publicKey
+  // }).rpc();
+  // console.log(`[Success]: Megapot Protocol Paused! Transaction: ${pauseTx}`);
 
 
-  const updateTx = await program.methods
-  .updateEpoch(9, 9)
-  .accounts({
-    admin: solanaKeyPair.publicKey
-  }).rpc();
+  // const updateTx = await program.methods
+  // .updateEpoch(9, 9)
+  // .accounts({
+  //   admin: solanaKeyPair.publicKey
+  // }).rpc();
 
-  console.log(`[Success]: Megapot Protocol Updated! Transaction: ${updateTx}`);
+  // console.log(`[Success]: Megapot Protocol Updated! Transaction: ${updateTx}`);
 
 
-  const resumetx = await program.methods
-  .resumeProtocol()
-  .accounts({
-    admin: solanaKeyPair.publicKey,
-  }).rpc();
+  // const resumetx = await program.methods
+  // .resumeProtocol()
+  // .accounts({
+  //   admin: solanaKeyPair.publicKey,
+  // }).rpc();
 
-  console.log(`[Success]: Megapot Protocol Resumed! Transaction: ${resumetx}`);
+  // console.log(`[Success]: Megapot Protocol Resumed! Transaction: ${resumetx}`);
 
-  try {
-    // 3. Double-check if the contract state has already been initialized
-    const stateAccount = await program.account.lordsPotState.fetch(lordsPotStatePda);
-    console.log(`[Deploy]: Protocol already initialized! Admin is currently: ${stateAccount.admin.toBase58()}`);
-    console.log(`[Deploy]: Protocol already initialized! Admin is currently: ${stateAccount.bonusMax}`);
-  } catch (err) {
-    console.log("[Deploy]: PDA state not found. Executing fresh initialization transaction...");
+  // try {
+  //   // 3. Double-check if the contract state has already been initialized
+  //   const stateAccount = await program.account.lordsPotState.fetch(lordsPotStatePda);
+  //   console.log(`[Deploy]: Protocol already initialized! Admin is currently: ${stateAccount.admin.toBase58()}`);
+  //   console.log(`[Deploy]: Protocol already initialized! Admin is currently: ${stateAccount.bonusMax}`);
+  // } catch (err) {
+  //   console.log("[Deploy]: PDA state not found. Executing fresh initialization transaction...");
+  // }
+
+
+  const buyerProgram = new Program<SolanaSmartContracts>(idl, provider);
+  const buyer = provider.wallet;
+
+  function generateLottery() {
+    const numbers = new Set<number>();
+
+    while (numbers.size < 5) {
+        numbers.add(Math.floor(Math.random() * 30) + 1);
+    }
+
+    const special = Math.floor(Math.random() * 12) + 1;
+
+    return {
+        numbers: [...numbers].sort((a, b) => a - b),
+        special
+    };
+}
+
+  let tickets_to_buy = [];
+
+  for (let i = 0; i < 1; i++){
+    const {numbers, special} = generateLottery();
+    tickets_to_buy.push(
+      { normalBall: Buffer.from(numbers), 
+        bonusBall: special
+      }
+    );
   }
+
+  console.log(tickets_to_buy);
+ 
+  // ! CUs Consumed / Limit -> 16,856 / 200,000
+  const buyTx = await buyerProgram.methods
+  .buyTicket(tickets_to_buy)
+  .accounts({
+    signer : buyer.publicKey,
+    tokenProgram: TOKEN_PROGRAM_ID
+  })
+  .rpc();
+
+  console.log(`[Success]: LordsPot Protocol boought ticket! Transaction: ${buyTx}`);
 
 }
 
