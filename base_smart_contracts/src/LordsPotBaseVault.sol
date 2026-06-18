@@ -12,10 +12,11 @@
 
 pragma solidity ^0.8.20;
 
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 interface IJackpot {
     struct Ticket {
@@ -32,7 +33,9 @@ interface IJackpot {
     ) external returns (uint256[] memory ticketIds);
 }
  
-contract LordsPotBaseVault is OwnableUpgradeable, UUPSUpgradeable, IERC721Receiver {
+contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
+    
+    using SafeERC20 for IERC20;
 
     // --- Custom Errors ---
     error OnlyRelayerAllowed(address providedCaller);
@@ -42,7 +45,7 @@ contract LordsPotBaseVault is OwnableUpgradeable, UUPSUpgradeable, IERC721Receiv
     error OrderAlreadyProcessed();
 
     // --- State Storage ---
-    mapping(string => bool) internal isOrderFulfilled;
+    mapping(bytes32 => bool) internal isOrderFulfilled;
 
     struct VaultInfo {
         address relayer;
@@ -52,6 +55,14 @@ contract LordsPotBaseVault is OwnableUpgradeable, UUPSUpgradeable, IERC721Receiv
     }
 
     VaultInfo internal vaultInfo;
+
+    // --- Production Events ---
+    event TicketsRouted(bytes32 indexed orderId, uint256 ticketCount, bytes32 indexed source);
+    event UsdcWithdrawn(address indexed to, uint256 amount);
+    event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
+    event MegapotAddressUpdated(address indexed oldMegapot, address indexed newMegapot);
+    event UsdcAddressUpdated(address indexed oldUsdc, address indexed newUsdc);
+    event ReferrerAddressUpdated(address indexed oldReferrer, address indexed newReferrer);
     
     // --- Modifiers ---
     modifier onlyRelayer() {
@@ -65,72 +76,79 @@ contract LordsPotBaseVault is OwnableUpgradeable, UUPSUpgradeable, IERC721Receiv
     }
 
     function _checkRelayer() internal view {
-        if (msg.sender != vaultInfo.relayer) {
-            revert OnlyRelayerAllowed(msg.sender);
+        address caller = _msgSender();
+        if (caller != vaultInfo.relayer) {
+            revert OnlyRelayerAllowed(caller);
         }
     }
 
     function _checkReferrer() internal view {
-        if (msg.sender != vaultInfo.referrerAddress) {
-            revert OnlyReferrerAllowed(msg.sender);
+        address caller = _msgSender();
+        if (caller != vaultInfo.referrerAddress) {
+            revert OnlyReferrerAllowed(caller);
         }
     }
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
-
-    // --- Initialization ---
-    function initialize(
+    constructor(
         address _initialOwner, 
         address _relayer, 
         address _megapotAddress, 
         address _usdcAddress, 
         address _referrerAddress
-    ) public initializer {
-        
-        // Zero-address sanity checks for initial deployment
-        if (_relayer == address(0) || _megapotAddress == address(0) || _usdcAddress == address(0)) {
+    ) Ownable(_initialOwner) {
+
+        if (_initialOwner == address(0) || _relayer == address(0) || _megapotAddress == address(0) || _usdcAddress == address(0) || _referrerAddress == address(0)) {
             revert InvalidAddress();
         }
-
-        __Ownable_init(_initialOwner);
 
         vaultInfo.relayer = _relayer;
         vaultInfo.megapotAddress = IJackpot(_megapotAddress);
         vaultInfo.usdcAddress = _usdcAddress;
         vaultInfo.referrerAddress = _referrerAddress;
 
-        IERC20(_usdcAddress).approve(_megapotAddress, type(uint256).max);
+        // Safe approval for initial setup
+        IERC20(_usdcAddress).forceApprove(_megapotAddress, type(uint256).max);
     }
 
     // --- Core Execution ---
     function buyTickets(
-        string calldata _orderId,
+        bytes32 _orderId,
         IJackpot.Ticket[] calldata _tickets,
         address[] calldata _referrers,
         uint256[] calldata _referralSplitBps,
         bytes32 _source
-    ) external onlyRelayer {
+    ) external whenNotPaused onlyRelayer {
         
-        if (isOrderFulfilled[_orderId]) revert OrderAlreadyProcessed();
+        if (isOrderFulfilled[_orderId]) revert OrderAlreadyProcessed();     // 1. CHECK
+
+        isOrderFulfilled[_orderId] = true;                                  // 2. EFFECT
         
-        isOrderFulfilled[_orderId] = true;
-        
-        vaultInfo.megapotAddress.buyTickets(
+        vaultInfo.megapotAddress.buyTickets(                                // 3. INTERACTION
             _tickets, 
             address(this), 
             _referrers, 
             _referralSplitBps, 
             _source
         );
+
+        emit TicketsRouted(_orderId, _tickets.length, _source);
     }
 
     // --- Treasury Management ---
     function withdrawUsdc(address _to, uint256 _amount) external onlyOwner {
         if (_to == address(0)) revert InvalidAddress();
-        IERC20(vaultInfo.usdcAddress).transfer(_to, _amount);
+        
+        // Handles non-compliant tokens gracefully
+        IERC20(vaultInfo.usdcAddress).safeTransfer(_to, _amount);
+        emit UsdcWithdrawn(_to, _amount);
+    }
+
+    function pause() public onlyOwner whenNotPaused {
+        _pause();    
+    }
+
+    function unPause() public onlyOwner whenPaused {
+        _unpause();    
     }
 
     // --- Getters ---
@@ -155,40 +173,52 @@ contract LordsPotBaseVault is OwnableUpgradeable, UUPSUpgradeable, IERC721Receiv
         if (_newRelayer == address(0)) revert InvalidAddress();
         if (_newRelayer == vaultInfo.relayer) revert OldAddressProvided();
         
+        address oldRelayer = vaultInfo.relayer;
         vaultInfo.relayer = _newRelayer;
+        
+        emit RelayerUpdated(oldRelayer, _newRelayer);
     }
 
     function setVaultMegapotAddress(address _newMegapotAddress) external onlyOwner {
         if (_newMegapotAddress == address(0)) revert InvalidAddress();
         if (_newMegapotAddress == address(vaultInfo.megapotAddress)) revert OldAddressProvided();
         
-        IERC20(vaultInfo.usdcAddress).approve(address(vaultInfo.megapotAddress), 0);
-        IERC20(vaultInfo.usdcAddress).approve(_newMegapotAddress, type(uint256).max);
+        address oldMegapot = address(vaultInfo.megapotAddress);
+        
+        // Revoke old allowance, grant new allowance securely
+        IERC20(vaultInfo.usdcAddress).forceApprove(oldMegapot, 0);
+        IERC20(vaultInfo.usdcAddress).forceApprove(_newMegapotAddress, type(uint256).max);
         
         vaultInfo.megapotAddress = IJackpot(_newMegapotAddress);
+        
+        emit MegapotAddressUpdated(oldMegapot, _newMegapotAddress);
     }
 
     function setVaultUsdcAddress(address _newUsdcAddress) external onlyOwner {
         if (_newUsdcAddress == address(0)) revert InvalidAddress();
         if (_newUsdcAddress == vaultInfo.usdcAddress) revert OldAddressProvided();
         
-        IERC20(vaultInfo.usdcAddress).approve(address(vaultInfo.megapotAddress), 0);
-        IERC20(_newUsdcAddress).approve(address(vaultInfo.megapotAddress), type(uint256).max);
+        address oldUsdc = vaultInfo.usdcAddress;
+        address currentMegapot = address(vaultInfo.megapotAddress);
+        
+        // Revoke allowance on old token, grant allowance on new token securely
+        IERC20(oldUsdc).forceApprove(currentMegapot, 0);
+        IERC20(_newUsdcAddress).forceApprove(currentMegapot, type(uint256).max);
         
         vaultInfo.usdcAddress = _newUsdcAddress;
+        
+        emit UsdcAddressUpdated(oldUsdc, _newUsdcAddress);
     }
 
     function setVaultReferrerAddress(address _referrerAddress) external onlyReferrer {
         if (_referrerAddress == address(0)) revert InvalidAddress();
         if (_referrerAddress == vaultInfo.referrerAddress) revert OldAddressProvided();
         
+        address oldReferrer = vaultInfo.referrerAddress;
         vaultInfo.referrerAddress = _referrerAddress;
+        
+        emit ReferrerAddressUpdated(oldReferrer, _referrerAddress);
     }
-
-    // --- Infrastructure Handlers ---
-    
-    // UUPS Upgrade Authorization Door Guard
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // Required handshake to receive ERC721 Tokens safely
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
