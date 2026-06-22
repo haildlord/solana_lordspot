@@ -1,10 +1,24 @@
+// {
+//   "compilerOptions": {
+//     "types": ["mocha", "chai", "node"],
+//     "typeRoots": ["./node_modules/@types"],
+//     "lib": ["es2015"],
+//     "module": "commonjs",
+//     "target": "es6",
+//     "esModuleInterop": true
+//   }
+// }
 {
   "compilerOptions": {
-    "types": ["mocha", "chai", "node"],
-    "typeRoots": ["./node_modules/@types"],
-    "lib": ["es2015"],
-    "module": "commonjs",
-    "target": "es6",
-    "esModuleInterop": true
-  }
+    "target": "es2020",
+    "module": "commonjs",         
+    "moduleResolution": "node",  
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
 }

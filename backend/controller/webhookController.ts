@@ -1,69 +1,153 @@
 import { Request, Response } from "express";
-import { Queue } from "bullmq";
-import IoRedis from "ioredis";
+import { ticketQueue } from "../lib/redis";
 
-// 1. Setup Redis Connection for the Queue
-const redisConnection = new IoRedis({
-    port: 6379,
-    host: "127.0.0.1"
-});
 
-const ticketQueue = new Queue("ticket-ingestion", { connection: redisConnection });
+let testReq = [
+    {
+      blockTime: 1782083345,
+      indexWithinBlock: 78,
+      meta: {
+        err: null,
+        fee: 5000,
+        innerInstructions: [
+          {
+            index: 0,
+            instructions: [
+              {
+                accounts: [ 1, 5, 2, 0 ],
+                data: 'iZGR3oiPrKgtV',
+                programIdIndex: 9
+              }
+            ]
+          }
+        ],
+        loadedAddresses: { readonly: [], writable: [] },
+        logMessages: [
+          'Program 5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo invoke [1]',
+          'Program log: Instruction: BuyTicket',
+          'Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]',
+          'Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 105 of 182402 compute units',
+          'Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success',
+          'Program data: ahyrVCd3TvPvoC75oMXB++kEd1zs7vyTYBhow6HLRgc4gn4oWiywacDGLQAAAAAAAwAAAAMAAAAFAAAAAgYHERoIBQAAAA4SFx0eBQUAAAAFDRIaHQoRbzhqAAAAAFkAAAAAAAAA',
+          'Program 5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo consumed 18954 of 200000 compute units',
+          'Program 5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo success'
+        ],
+        postBalances: [
+          6266826072,      2039280,
+             2039280,            1,
+             1308480, 349440958969,
+             1141440,   5938070540,
+                   0,  12107573357
+        ],
+        postTokenBalances: [
+          {
+            accountIndex: 1,
+            mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+            owner: 'H8Q7CUvPigtSxfd13TKRuFrwdJtc6pJu9BMNhbXF9yAY',
+            programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            uiTokenAmount: {
+              amount: '53000000',
+              decimals: 6,
+              uiAmount: 53,
+              uiAmountString: '53'
+            }
+          },
+          {
+            accountIndex: 2,
+            mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+            owner: 'LgtTwqMcP9vtJ3L19AMgEho2LJ77zFmRwtPTYqbyPGK',
+            programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            uiTokenAmount: {
+              amount: '6000000',
+              decimals: 6,
+              uiAmount: 6,
+              uiAmountString: '6'
+            }
+          }
+        ],
+        preBalances: [
+          6266831072,      2039280,
+             2039280,            1,
+             1308480, 349440958969,
+             1141440,   5938070540,
+                   0,  12107573357
+        ],
+        preTokenBalances: [
+          {
+            accountIndex: 1,
+            mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+            owner: 'H8Q7CUvPigtSxfd13TKRuFrwdJtc6pJu9BMNhbXF9yAY',
+            programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            uiTokenAmount: {
+              amount: '56000000',
+              decimals: 6,
+              uiAmount: 56,
+              uiAmountString: '56'
+            }
+          },
+          {
+            accountIndex: 2,
+            mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+            owner: 'LgtTwqMcP9vtJ3L19AMgEho2LJ77zFmRwtPTYqbyPGK',
+            programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+            uiTokenAmount: {
+              amount: '3000000',
+              decimals: 6,
+              uiAmount: 3,
+              uiAmountString: '3'
+            }
+          }
+        ],
+        rewards: []
+      },
+      slot: 471056782,
+      transaction: {
+        message: {
+          accountKeys: [
+            'H8Q7CUvPigtSxfd13TKRuFrwdJtc6pJu9BMNhbXF9yAY',
+            '7qo9uWHJmJ9mSPFdUCueUBQpwkyQ3RwimeZ4uvcbJoZ8',
+            'A59FKpMApFfsKwEqrd5YWoEUyGefDWvJSd4CzS4X8Grb',
+            '11111111111111111111111111111111',
+            '13fJA2pmD837DpSMFGGzcpGw4jS1P1cbncEUGnstvEYz',
+            '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+            '5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo',
+            'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+            'LgtTwqMcP9vtJ3L19AMgEho2LJ77zFmRwtPTYqbyPGK',
+            'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+          ],
+          addressTableLookups: null,
+          header: {
+            numReadonlySignedAccounts: 0,
+            numReadonlyUnsignedAccounts: 7,
+            numRequiredSignatures: 1
+          },
+          instructions: [
+            {
+              accounts: [
+                0, 4, 1, 2, 8,
+                5, 3, 9, 7
+              ],
+              data: 'BjrfqrU3xSkKxeqMCpdfq9Zvzd469NQJ2LGhdN6AricsFzLddLGnDQzZF',
+              programIdIndex: 6
+            }
+          ],
+          recentBlockhash: 'FA7D78geTMajZmWkSTiXxUzRKpFdWZuMVfV4d8SAKZUG'
+        },
+        signatures: [
+          '2ZSvKPZeZLKr34wjCaxKkikSq3bhsnK9vjCsZqNHeeNiQKjtBPkPz4FkDEivfitrut1cQPHe18uTo27u6eqeC4X4'
+        ]
+      },
+      version: 'legacy'
+    }
+  ]
 
-// 2. Hardcoded Mock Payload
-// let testReq = [
-//     {
-//         "blockTime": 1781408980,
-//         "indexWithinBlock": 15,
-//         "meta": {
-//             "err": null,
-//             "fee": 10000,
-//             "innerInstructions": [{ "index": 0, "instructions": [{ "accounts": [2, 5, 3, 1], "data": "gvQzKgr3xhN2h", "programIdIndex": 10 }] }],
-//             "loadedAddresses": { "readonly": [], "writable": [] },
-//             "logMessages": [
-//                 "Program 6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9 invoke [1]",
-//                 "Program log: Instruction: BuyTicket",
-//                 "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
-//                 "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 105 of 183588 compute units",
-//                 "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
-//                 "Program data: ahyrVCd3TvPvoC75oMXB++kEd1zs7vyTYBhow6HLRgc4gn4oWiywaUBLTAAAAAAABQAAAAUAAAAFAAAABgcMEhMHBQAAAAIEDBcaDAUAAAAJCgwREgMFAAAAAQoPGh4DBQAAAAILDBMZCtQkLmoAAAAA",
-//                 "Program 6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9 consumed 17868 of 200000 compute units",
-//                 "Program 6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9 success"
-//             ],
-//             "postBalances": [996692920, 7894609972, 2039280, 2039280, 1, 344430958969, 1141440, 1252800, 0, 5938070540, 12091573357],
-//             "postTokenBalances": [
-//                 { "accountIndex": 2, "mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "owner": "H8Q7CUvPigtSxfd13TKRuFrwdJtc6pJu9BMNhbXF9yAY", "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "uiTokenAmount": { "amount": "35000000", "decimals": 6, "uiAmount": 35, "uiAmountString": "35" } },
-//                 { "accountIndex": 3, "mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "owner": "9FbmTbmkrxYQp9Qka8sy3HdMVGDUx3tjaWeATvffq9T8", "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "uiTokenAmount": { "amount": "5000000", "decimals": 6, "uiAmount": 5, "uiAmountString": "5" } }
-//             ],
-//             "preBalances": [996702920, 7894609972, 2039280, 2039280, 1, 344430958969, 1141440, 1252800, 0, 5938070540, 12091573357],
-//             "preTokenBalances": [
-//                 { "accountIndex": 2, "mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "owner": "H8Q7CUvPigtSxfd13TKRuFrwdJtc6pJu9BMNhbXF9yAY", "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "uiTokenAmount": { "amount": "40000000", "decimals": 6, "uiAmount": 40, "uiAmountString": "40" } },
-//                 { "accountIndex": 3, "mint": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "owner": "9FbmTbmkrxYQp9Qka8sy3HdMVGDUx3tjaWeATvffq9T8", "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", "uiTokenAmount": { "amount": "0", "decimals": 6, "uiAmount": 0, "uiAmountString": "0" } }
-//             ],
-//             "rewards": []
-//         },
-//         "slot": 469294159,
-//         "transaction": {
-//             "message": {
-//                 "accountKeys": ["AigbEGvypACrUq7hgjNwCDfd8SfcgfTH6esHu8maHysS", "H8Q7CUvPigtSxfd13TKRuFrwdJtc6pJu9BMNhbXF9yAY", "7qo9uWHJmJ9mSPFdUCueUBQpwkyQ3RwimeZ4uvcbJoZ8", "F4dBmqgm6gT5z3ey26DRicuQcFgy5DkNtena3F7pFyZx", "11111111111111111111111111111111", "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9", "7fXCYjg71RXkGGfhg7UWapG2nAsRFzaixPf3ZxJ7691E", "9FbmTbmkrxYQp9Qka8sy3HdMVGDUx3tjaWeATvffq9T8", "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"],
-//                 "addressTableLookups": null,
-//                 "header": { "numReadonlySignedAccounts": 0, "numReadonlyUnsignedAccounts": 7, "numRequiredSignatures": 2 },
-//                 "instructions": [{ "accounts": [1, 7, 2, 3, 8, 5, 4, 10, 9], "data": "fJRaCEAtS3He3xsj5TJ5T5eRFa3P7A45F8zqKrJ3de1TDxocmL24cUq2YDP1gGWKAn4NxKmVQQ3XrHXkejBf", "programIdIndex": 6 }],
-//                 "recentBlockhash": "4pttJv3bPAw3i4L3PGHLJ6HdUJ2Yai8haBz1omRGrb9o"
-//             },
-//             "signatures": [
-//                 "36pLSP8Myu6mXmYRqjTmeBZRH5HRUkxAe5hHZP8Ja4ExsxFZX7mVDJvP6f9S91nWwZeQ9VqHDWeKTn6RKDkSF82r",
-//                 "cQFn1erzhWQPSDoc81WbiigJwZSLSPXq4zNJLEzkGEMtwigwqWRKRGeSpgBsK132U1SvjPSycNcttnm6YzfJDwx"
-//             ]
-//         },
-//         "version": "legacy"
-//     }
-// ];
 
-// 3. Controller Logic
 export const webhookController = async (req: Request, res: Response) => {
     try { 
-        const transactions = req.body;  
+        // const transactions = req.body;  
+        const transactions = testReq
+
+        console.dir(transactions, { depth: null, colors: true });
         
         if (!transactions || !Array.isArray(transactions) || transactions.length === 0){
             console.log("[webhookController] : Received empty or invalid webhook payload.");

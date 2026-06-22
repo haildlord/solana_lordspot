@@ -7,14 +7,53 @@ datasource db {
   provider = "postgresql"
 }
 
-model Ticket {
-  id  String  @id @default(uuid())  
-  signature   String
-  buyer       String
-  link_to_nft String?
-  bonusBall   Int
-  normalBalls Int[]
-  lastBought  DateTime
 
-  @@index([signature])
+enum OrderStatus {
+  QUEUED
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
+enum WinStatus {
+  DRAW_PENDING
+  WON
+  LOST
+}
+
+model RelayOrder {
+  hash            String      @id
+  signature       String      @unique
+  buyer           String
+  
+  epoch           Int
+
+  lastBought      DateTime
+  status          OrderStatus  @default(QUEUED)
+  
+  tickets         Ticket[] 
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model Ticket {
+  id              String      @id @default(uuid())
+  
+  orderHash       String   
+  relayOrder      RelayOrder  @relation(fields: [orderHash], references: [hash])
+  
+  bonusBall       Int
+  normalBalls     Int[]
+
+  onChainTicketId String?
+
+  winStatus       WinStatus   @default(DRAW_PENDING)
+  winAmount      Int         @default(0)  
+}
+
+model GlobalState {
+  id              String      @id @default(uuid())
+  isPaused        Boolean     @default(false)
+  ongoingEpoch    Int  
 }

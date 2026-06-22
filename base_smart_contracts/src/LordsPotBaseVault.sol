@@ -57,7 +57,7 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
     VaultInfo internal vaultInfo;
 
     // --- Production Events ---
-    event TicketsRouted(bytes32 indexed orderId, uint256 ticketCount, bytes32 indexed source);
+    event TicketsRouted(bytes32 indexed orderId, uint256 ticketCount, bytes32 indexed source, uint256[] ticketIds);
     event UsdcWithdrawn(address indexed to, uint256 amount);
     event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
     event MegapotAddressUpdated(address indexed oldMegapot, address indexed newMegapot);
@@ -119,11 +119,11 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
         bytes32 _source
     ) external whenNotPaused onlyRelayer {
         
-        if (isOrderFulfilled[_orderId]) revert OrderAlreadyProcessed();     // 1. CHECK
+        if (isOrderFulfilled[_orderId]) revert OrderAlreadyProcessed();         // 1. CHECK
 
-        isOrderFulfilled[_orderId] = true;                                  // 2. EFFECT
+        isOrderFulfilled[_orderId] = true;                                      // 2. EFFECT
         
-        vaultInfo.megapotAddress.buyTickets(                                // 3. INTERACTION
+        uint256[] memory _ticketIds = vaultInfo.megapotAddress.buyTickets(      // 3. INTERACTION
             _tickets, 
             address(this), 
             _referrers, 
@@ -131,7 +131,7 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
             _source
         );
 
-        emit TicketsRouted(_orderId, _tickets.length, _source);
+        emit TicketsRouted(_orderId, _tickets.length, _source, _ticketIds);
     }
 
     // --- Treasury Management ---

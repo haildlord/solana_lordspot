@@ -1,5 +1,5 @@
 {
-  "address": "6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9",
+  "address": "5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo",
   "metadata": {
     "name": "solana_smart_contracts",
     "version": "0.1.0",
@@ -480,6 +480,10 @@
         {
           "name": "ticket_price",
           "type": "u64"
+        },
+        {
+          "name": "starting_epoch",
+          "type": "u64"
         }
       ]
     },
@@ -746,6 +750,10 @@
             "type": "u64"
           },
           {
+            "name": "ongoing_epoch",
+            "type": "u64"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -806,6 +814,10 @@
           {
             "name": "timestamp",
             "type": "i64"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
           }
         ]
       }

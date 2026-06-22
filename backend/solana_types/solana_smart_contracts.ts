@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/solana_smart_contracts.json`.
  */
 export type SolanaSmartContracts = {
-  "address": "6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9",
+  "address": "5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo",
   "metadata": {
     "name": "solanaSmartContracts",
     "version": "0.1.0",
@@ -486,6 +486,10 @@ export type SolanaSmartContracts = {
         {
           "name": "ticketPrice",
           "type": "u64"
+        },
+        {
+          "name": "startingEpoch",
+          "type": "u64"
         }
       ]
     },
@@ -752,6 +756,10 @@ export type SolanaSmartContracts = {
             "type": "u64"
           },
           {
+            "name": "ongoingEpoch",
+            "type": "u64"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -812,6 +820,10 @@ export type SolanaSmartContracts = {
           {
             "name": "timestamp",
             "type": "i64"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
           }
         ]
       }

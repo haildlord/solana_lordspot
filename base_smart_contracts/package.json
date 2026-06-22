@@ -1,0 +1,5 @@
+{
+    "scripts": {
+      "export-abi": "forge build && cp ./out/LordsPotBaseVault.sol/LordsPotBaseVault.json ../backend/base_abi/"
+    }
+  }

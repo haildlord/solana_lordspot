@@ -15,18 +15,20 @@ import { configDotenv } from "dotenv";
 configDotenv();
 
 module.exports = async function (provider: anchor.AnchorProvider) {
-  // // 1. Establish the default workspace provider context
+
+  // 1. Provider :
+  // CLI : anchor migrate --provider.cluster "https://devnet.helius-rpc.com/?api-key=XYZ" --provider.wallet ./deployer-keypair.json ( AigbEGvypACrUq7hgjNwCDfd8SfcgfTH6esHu8maHysS )
   anchor.setProvider(provider);
 
-  // // 2. Extract the compiled IDL from the workspace before the swap
+  // 2. Get IDL of LordsPot
   const workspaceProgram = anchor.workspace.SolanaSmartContracts;
   const idl = workspaceProgram.idl;
 
-  // // 3. Decode your specific private key from your backend environment variables
-  const solana_private_key_byteArray = bs58.decode(`${process.env.SOLANA_PRIVATE_KEY}`);
+  // 3. RELAYER_SOLANA_PRIVATE_KEY of `AigbEGvypACrUq7hgjNwCDfd8SfcgfTH6esHu8maHysS`
+  const solana_private_key_byteArray = bs58.decode(`${process.env.RELAYER_SOLANA_PRIVATE_KEY}`);
   const solanaKeyPair: Keypair = Keypair.fromSecretKey(solana_private_key_byteArray);
 
-  // // 4. Wrap your custom keypair into a new wallet and provider session
+  // 4. Create a Provider -> ( RELAYER_SOLANA_PRIVATE_KEY, CLI "https://devnet.helius-rpc.com/?api-key=XYZ" )
   const customWallet = new anchor.Wallet(solanaKeyPair);
   const customProvider = new anchor.AnchorProvider(
     provider.connection, 
@@ -34,12 +36,10 @@ module.exports = async function (provider: anchor.AnchorProvider) {
     anchor.AnchorProvider.defaultOptions()
   );
 
-  console.log(provider.connection.rpcEndpoint);
-
-  // 5. Re-bind the global anchor context to your elite custom provider
+  // 5. attach the provider to anchor
   anchor.setProvider(customProvider);
 
-  // 6. Instantiate the program instance using the modern two-argument signature
+  // 6. Attach the Created Provider, to sign for the programs, using RELAYER_SOLANA_PRIVATE_KEY & program
   const program = new Program<SolanaSmartContracts>(idl, customProvider);
 
   // console.log("--------------------------------------------------");
@@ -50,10 +50,9 @@ module.exports = async function (provider: anchor.AnchorProvider) {
   const NORMAL_MAX = 30; 
   const BONUS_MAX = 12;
   const TICKET_PRICE = new anchor.BN(1_000_000); // $1.00 USDC (6 decimals)
+  const INIT_EPOCH = new anchor.BN(89);
   console.log("--------------------------------------------------");
 
-  // 1. Define constants matching your constants.rs / env
-  const DEVNET_USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
 
   // 2. Derive Program Derived Addresses (PDAs)
   const [lordsPotStatePda] = PublicKey.findProgramAddressSync(
@@ -65,6 +64,9 @@ module.exports = async function (provider: anchor.AnchorProvider) {
     [Buffer.from("vault_authority")],
     program.programId
   );
+
+  // Define constants matching your constants.rs / env -- ! change this when Mainnet
+  const DEVNET_USDC_MINT = new PublicKey("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
 
   // Derive the Vault Associated Token Account (ATA) owned by our Vault Authority PDA
   const vaultUsdcAccount = getAssociatedTokenAddressSync(
@@ -81,19 +83,41 @@ module.exports = async function (provider: anchor.AnchorProvider) {
   console.log(`[ATA] Vault USDC Token: ${vaultUsdcAccount.toBase58()}`);
   console.log("--------------------------------------------------");
 
-  // try {
-  //   const tx = await program.methods
-  //     .initialize(NORMAL_MAX, BONUS_MAX, TICKET_PRICE)
-  //     .accounts({
-  //       tokenProgram: TOKEN_PROGRAM_ID,
-  //     }).rpc();
+  try {
+    const tx = await program.methods
+      .initialize(NORMAL_MAX, BONUS_MAX, TICKET_PRICE, INIT_EPOCH)
+      .accounts({
+        tokenProgram: TOKEN_PROGRAM_ID,
+      }).rpc();
 
-  //   console.log(`[Success]: Megapot Protocol Initialized! Transaction: ${tx}`);
+    console.log(`[Success]: Megapot Protocol Initialized! Transaction: ${tx}`);
   
-  // } catch (error) {
-  //   console.error("[Error]: Failed to initialize protocol:", error);
-  //   throw error;
-  // }
+  } catch (error) {
+    console.error("[Error]: Failed to initialize protocol:", error);
+    throw error;
+  }
+
+
+  try {
+    // 3. Double-check if the contract state has already been initialized
+    const stateAccount = await program.account.lordsPotState.fetch(lordsPotStatePda);
+    
+    console.log("\n=== 🟢 PROTOCOL ALREADY INITIALIZED ===");
+    console.log(`Admin:           ${stateAccount.admin.toBase58()}`);
+    console.log(`Normal Max:      ${stateAccount.normalMax}`);
+    console.log(`Bonus Max:       ${stateAccount.bonusMax}`);
+    
+    // u64 types become BN (BigNumber) in JS, so we must use .toString()
+    console.log(`Ticket Price:    ${stateAccount.ticketPrice.toString()} (Raw Units)`);
+    console.log(`Ongoing Epoch:   ${stateAccount.ongoingEpoch.toString()}`);
+    
+    console.log(`Is Paused:       ${stateAccount.isLordsPotPaused}`);
+    console.log(`PDA Bump:        ${stateAccount.bump}`);
+    console.log("=======================================\n");
+    
+  } catch (err) {
+    console.log("[Deploy]: PDA state not found. Executing fresh initialization transaction...");
+  }
 
   // const pauseTx = await program.methods
   // .pauseProtocol()
@@ -120,57 +144,48 @@ module.exports = async function (provider: anchor.AnchorProvider) {
 
   // console.log(`[Success]: Megapot Protocol Resumed! Transaction: ${resumetx}`);
 
-  // try {
-  //   // 3. Double-check if the contract state has already been initialized
-  //   const stateAccount = await program.account.lordsPotState.fetch(lordsPotStatePda);
-  //   console.log(`[Deploy]: Protocol already initialized! Admin is currently: ${stateAccount.admin.toBase58()}`);
-  //   console.log(`[Deploy]: Protocol already initialized! Admin is currently: ${stateAccount.bonusMax}`);
-  // } catch (err) {
-  //   console.log("[Deploy]: PDA state not found. Executing fresh initialization transaction...");
+
+//   const buyerProgram = new Program<SolanaSmartContracts>(idl, provider);
+//   const buyer = provider.wallet;
+
+//   function generateLottery() {
+//     const numbers = new Set<number>();
+
+//     while (numbers.size < 5) {
+//         numbers.add(Math.floor(Math.random() * 30) + 1);
+//     }
+
+//     const special = Math.floor(Math.random() * 12) + 1;
+
+//     return {
+//         numbers: [...numbers].sort((a, b) => a - b),
+//         special
+//     };
+// }
+
+  // let tickets_to_buy = [];
+
+  // for (let i = 0; i < 1; i++){
+  //   const {numbers, special} = generateLottery();
+  //   tickets_to_buy.push(
+  //     { normalBall: Buffer.from(numbers), 
+  //       bonusBall: special
+  //     }
+  //   );
   // }
 
-
-  const buyerProgram = new Program<SolanaSmartContracts>(idl, provider);
-  const buyer = provider.wallet;
-
-  function generateLottery() {
-    const numbers = new Set<number>();
-
-    while (numbers.size < 5) {
-        numbers.add(Math.floor(Math.random() * 30) + 1);
-    }
-
-    const special = Math.floor(Math.random() * 12) + 1;
-
-    return {
-        numbers: [...numbers].sort((a, b) => a - b),
-        special
-    };
-}
-
-  let tickets_to_buy = [];
-
-  for (let i = 0; i < 1; i++){
-    const {numbers, special} = generateLottery();
-    tickets_to_buy.push(
-      { normalBall: Buffer.from(numbers), 
-        bonusBall: special
-      }
-    );
-  }
-
-  console.log(tickets_to_buy);
+  // console.log(tickets_to_buy);
  
   // ! CUs Consumed / Limit -> 16,856 / 200,000
-  const buyTx = await buyerProgram.methods
-  .buyTicket(tickets_to_buy)
-  .accounts({
-    signer : buyer.publicKey,
-    tokenProgram: TOKEN_PROGRAM_ID
-  })
-  .rpc();
+  // const buyTx = await buyerProgram.methods
+  // .buyTicket(tickets_to_buy)
+  // .accounts({
+  //   signer : buyer.publicKey,
+  //   tokenProgram: TOKEN_PROGRAM_ID
+  // })
+  // .rpc();
 
-  console.log(`[Success]: LordsPot Protocol boought ticket! Transaction: ${buyTx}`);
+  // console.log(`[Success]: LordsPot Protocol boought ticket! Transaction: ${buyTx}`);
 
 }
 

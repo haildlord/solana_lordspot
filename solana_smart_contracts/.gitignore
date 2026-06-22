@@ -10,3 +10,4 @@ test-ledger
 surfnet-temp.sqlite
 surfnet-state.sqlite
 observations.md
+deployer-keypair.json

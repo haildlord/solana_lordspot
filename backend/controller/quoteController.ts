@@ -3,7 +3,7 @@ import { QuoteRequest, Ticket } from "../interfaces/types";
 import { PublicKey } from "@solana/web3.js";
 import { megapotService } from "../services/megapotService";
 
-export const quoteController = (req: Request, res: Response) => {
+export const quoteController = async (req: Request, res: Response) => {
     try {
 
         const { tickets, userSolanaAddress, referrers, referralSplitBps }: QuoteRequest = req.body;
@@ -12,8 +12,8 @@ export const quoteController = (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Invalid request' });
         }
 
-
-        const roundState = megapotService.getRoundState();
+        const roundState = await megapotService.getRoundState();
+        const isPaused = await megapotService.isProtocolPaused();
 
         if (!roundState) {
             return res.status(404).json({ message: 'No active round found' });

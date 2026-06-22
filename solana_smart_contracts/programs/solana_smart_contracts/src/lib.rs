@@ -5,18 +5,18 @@ use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Tran
 pub mod constants;
 use constants::*;
 
-declare_id!("6MCjqsDP4zjxxg2AWCrjDGeKYUiWL3xpG2ccUxLXaMB9");
+declare_id!("5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo");
 
 #[program]
 pub mod solana_smart_contracts {
     use super::*;
 
-    // ! The ticket_price must be expected in raw minimum units, meaning $1.00 must be passed as 1_000_000
     pub fn initialize(
         ctx: Context<Initialize>, 
         normal_max: u8, 
         bonus_max: u8,
-        ticket_price: u64 
+        ticket_price: u64,
+        starting_epoch: u64 
     ) -> Result<()> {
         let state = &mut ctx.accounts.lords_pot_state;
         
@@ -25,17 +25,18 @@ pub mod solana_smart_contracts {
         state.bonus_max = bonus_max;
         state.ticket_price = ticket_price; 
         state.is_lords_pot_paused = false;
+        
+        state.ongoing_epoch = starting_epoch; 
 
         let bump = ctx.bumps.lords_pot_state;
         state.bump = bump;
 
-        msg!("LordsPot Initialized! Admin: {}", state.admin);
+        msg!("LordsPot Initialized! Admin: {}, Initial Epoch: {}", state.admin, state.ongoing_epoch);
         Ok(())
     }
 
     pub fn buy_ticket(ctx: Context<BuyTicket>, tickets: Vec<Ticket>) -> Result<()> {
-
-        require!(tickets.len() <= 100, LordsPotError::TooManyTickets); // ! make sure to ask @brain & @andrei about this
+        require!(tickets.len() <= 100, LordsPotError::TooManyTickets); 
 
         let state = &ctx.accounts.lords_pot_state;
 
@@ -50,7 +51,7 @@ pub mod solana_smart_contracts {
                 LordsPotError::BonusBallOutOfBounds
             );
 
-            let valid_normals = ticket.normal_ball.iter().all(|&ball|{
+            let valid_normals = ticket.normal_ball.iter().all(|&ball| {
                 ball > 0 && ball <= state.normal_max
             });
             require!(valid_normals, LordsPotError::NormalBallOutOfBounds);
@@ -74,13 +75,13 @@ pub mod solana_smart_contracts {
         let cpi_context = CpiContext::new(cpi_program, cpi_accounts);
         token_interface::transfer_checked(cpi_context, total_amount, decimals)?;
 
-
         emit!(TicketPurchaseEvent {
             buyer: ctx.accounts.signer.key(),
             amount_paid: total_amount,
             tickets_bought: tickets.len() as u32,
             tickets_data: tickets, 
             timestamp: Clock::get()?.unix_timestamp,
+            epoch: state.ongoing_epoch,
         });
         
         Ok(())
@@ -96,7 +97,10 @@ pub mod solana_smart_contracts {
     pub fn resume_protocol(ctx: Context<ResumeProtocol>) -> Result<()> {
         let state = &mut ctx.accounts.lords_pot_state;
         state.is_lords_pot_paused = false;
-        msg!("Protocol Resumed.");
+        
+        state.ongoing_epoch += 1; 
+        
+        msg!("Protocol Resumed. Rolled over to Epoch: {}", state.ongoing_epoch);
         Ok(())
     }
 
@@ -111,10 +115,9 @@ pub mod solana_smart_contracts {
         state.normal_max = normal_max;
         state.bonus_max = bonus_max;
     
-        msg!("Epoch Updated and Protocol Resumed. New Normals Max: {}, Bonus Max: {}", normal_max, bonus_max);
+        msg!("Epoch Bounds Updated. New Normals Max: {}, Bonus Max: {}", normal_max, bonus_max);
         Ok(())
     }
-
 }
 
 // --- EVENT DEFINITIONS ---
@@ -126,7 +129,10 @@ pub struct TicketPurchaseEvent {
     pub tickets_bought: u32,
     pub tickets_data: Vec<Ticket>,
     pub timestamp: i64,
+    pub epoch: u64, 
 }
+
+// --- CONTEXT DEFINITIONS ---
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -134,10 +140,10 @@ pub struct Initialize<'info> {
     pub signer: Signer<'info>,
 
     #[account(
-        init,
+        init_if_needed, // ! while deploying change it to init and simplify the `Cargo.toml` as well !
         payer = signer,
         space = 8 + LordsPotState::INIT_SPACE,
-        seeds = [b"lords_pot_state"],
+        seeds = [b"lords_pot_state"], 
         bump
     )]
     pub lords_pot_state: Account<'info, LordsPotState>,
@@ -149,7 +155,7 @@ pub struct Initialize<'info> {
     pub vault_authority: SystemAccount<'info>,
 
     #[account(
-        init, 
+        init_if_needed, // ! while deploying change it to init and simplify the `Cargo.toml` as well !
         payer = signer,
         associated_token::mint = usdc_mint,
         associated_token::authority = vault_authority,
@@ -170,7 +176,7 @@ pub struct BuyTicket<'info> {
     pub signer: Signer<'info>,
 
     #[account(
-        seeds = [b"lords_pot_state"],
+        seeds = [b"lords_pot_state"], 
         bump = lords_pot_state.bump,
         constraint = !lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolPaused
     )]
@@ -198,38 +204,20 @@ pub struct BuyTicket<'info> {
 
     #[account(address = USDC_MINT_ADDRESS)]
     pub usdc_mint: InterfaceAccount<'info, Mint>,
-
+      
     pub system_program: Program<'info, System>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>, 
 }
 
-#[account]
-#[derive(InitSpace)]
-pub struct LordsPotState {
-    pub normal_max: u8,
-    pub bonus_max: u8,
-    pub ticket_price: u64,
-    pub bump: u8,
-    pub is_lords_pot_paused: bool,
-    pub admin: Pubkey,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct Ticket {
-    pub normal_ball: Vec<u8>,
-    pub bonus_ball: u8
-}
-
 #[derive(Accounts)]
 pub struct PauseProtocol<'info> {
-
     #[account(mut, constraint = admin.key() == lords_pot_state.admin @ LordsPotError::Unauthorized)]
     pub admin: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [b"lords_pot_state"],
+        seeds = [b"lords_pot_state"], 
         bump = lords_pot_state.bump,
         constraint = !lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolPaused
     )]
@@ -243,7 +231,7 @@ pub struct ResumeProtocol<'info> {
 
     #[account(
         mut,
-        seeds = [b"lords_pot_state"],
+        seeds = [b"lords_pot_state"], 
         bump = lords_pot_state.bump,
         constraint = lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolNotPaused
     )]
@@ -257,13 +245,34 @@ pub struct UpdateEpoch<'info> {
 
     #[account(
         mut,
-        seeds = [b"lords_pot_state"],
+        seeds = [b"lords_pot_state"], 
         bump = lords_pot_state.bump,
         constraint = lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolNotPaused
     )]
     pub lords_pot_state: Account<'info, LordsPotState>,
 }
 
+// --- STATE STRUCTS ---
+
+#[account]
+#[derive(InitSpace)]
+pub struct LordsPotState {
+    pub normal_max: u8,
+    pub bonus_max: u8,
+    pub ticket_price: u64,
+    pub ongoing_epoch: u64, 
+    pub bump: u8,
+    pub is_lords_pot_paused: bool,
+    pub admin: Pubkey,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct Ticket {
+    pub normal_ball: Vec<u8>,
+    pub bonus_ball: u8,
+}
+
+// --- ERROR CODES ---
 
 #[error_code]
 pub enum LordsPotError {
@@ -288,5 +297,5 @@ pub enum LordsPotError {
     #[msg("You cannot purchase more than 100 tickets in a single transaction.")]
     TooManyTickets,
     #[msg("Same as values as Previous Epoch")]
-    SameAsPreviousEpoch
+    SameAsPreviousEpoch,
 }
