@@ -583,7 +583,12 @@
           }
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "next_epoch",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "update_epoch",
@@ -729,6 +734,11 @@
       "code": 6010,
       "name": "SameAsPreviousEpoch",
       "msg": "Same as values as Previous Epoch"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidNextEpoch",
+      "msg": "The provided next epoch must be strictly greater than the current ongoing epoch."
     }
   ],
   "types": [

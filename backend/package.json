@@ -2,11 +2,19 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "LordsPot Backend Relayer",
-  "main": "dist/server.js",
+  "main": "dist/api/server.js",
   "scripts": {
-    "dev": "tsx watch server.ts",
+    "dev": "tsx watch src/api/server.ts",
+    "dev:api": "tsx watch src/api/server.ts",
+    "dev:worker": "tsx watch src/workers/index.ts",
+    "dev:cron": "tsx watch src/cron/index.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start:api": "tsx src/api/server.ts",
+    "start:worker": "tsx src/workers/index.ts",
+    "start:cron": "tsx src/cron/index.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -24,6 +32,7 @@
     "dotenv": "^17.4.2",
     "ethers": "^6.16.0",
     "express": "^5.2.1",
+    "ioredis": "^5.6.1",
     "pg": "^8.21.0"
   },
   "devDependencies": {

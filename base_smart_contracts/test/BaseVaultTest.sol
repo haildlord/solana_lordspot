@@ -24,6 +24,6 @@ contract BaseVaultTest is Test {
     }
 
     function test_LiveDeploymentState() public view {
-        console2.log(IERC20(usdcAddress).balanceOf(address(vault))); // 16 USDC
+        console2.log(IERC20(usdcAddress).balanceOf(address(vault))); // 10_882 * 1e6 USDC
     }
 }

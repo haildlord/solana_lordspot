@@ -50,7 +50,7 @@ module.exports = async function (provider: anchor.AnchorProvider) {
   const NORMAL_MAX = 30; 
   const BONUS_MAX = 12;
   const TICKET_PRICE = new anchor.BN(1_000_000); // $1.00 USDC (6 decimals)
-  const INIT_EPOCH = new anchor.BN(89);
+  const INIT_EPOCH = new anchor.BN(107);
   console.log("--------------------------------------------------");
 
 

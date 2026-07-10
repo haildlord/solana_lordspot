@@ -7,53 +7,130 @@ datasource db {
   provider = "postgresql"
 }
 
-
 enum OrderStatus {
-  QUEUED
-  PROCESSING
-  SUCCESS
-  FAILED
+  SOLANA_CONFIRMED // parsed from chain, not yet relayed
+  QUEUED // ready for Base relay
+  DEFERRED // epoch locked / megapot paused — retry next epoch
+  PROCESSING // relayer has lock
+  BASE_SUBMITTED // tx broadcast, awaiting confirmation
+  SUCCESS // Megapot tickets minted
+  RETRY_PENDING // transient failure, will retry
+  FAILED_PERMANENT // bad ticket data, needs manual ops
 }
 
 enum WinStatus {
   DRAW_PENDING
-  WON
   LOST
+  WON_UNCLAIMED
+  CLAIMED_ON_BASE
+  PAID_OUT_ON_SOLANA
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  SKIPPED
+  FAILED
+}
+
+model WebhookInbox {
+  id          String        @id @default(uuid())
+  signature   String        @unique
+  source      String // "helius" | "poller"
+  rawPayload  Json
+  status      WebhookStatus @default(RECEIVED)
+  error       String?
+  createdAt   DateTime      @default(now())
+  processedAt DateTime?
+
+  @@index([status, createdAt])
 }
 
 model RelayOrder {
-  hash            String      @id
-  signature       String      @unique
-  buyer           String
-  
-  epoch           Int
+  hash             String         @id // ethers.id(signature)
+  signature        String         @unique
+  buyer            String         @db.VarChar(44)
+  purchaseEpoch    Int // epoch on Solana when user paid
+  fulfillEpoch     Int? // epoch we actually bought on Megapot
+  amountUsdc       BigInt // lamports-style 6 decimals
+  ticketCount      Int
+  lastBought       DateTime
+  status           OrderStatus    @default(SOLANA_CONFIRMED)
+  attemptCount     Int            @default(0)
+  lastError        String?
+  nextRetryAt      DateTime?
+  baseTxHash       String?
+  megapotTicketIds String[]       @default([])
+  tickets          Ticket[]
+  attempts         RelayAttempt[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  lastBought      DateTime
-  status          OrderStatus  @default(QUEUED)
-  
-  tickets         Ticket[] 
+  @@index([status, nextRetryAt])
+  @@index([buyer])
+}
 
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+model RelayAttempt {
+  id         String     @id @default(uuid())
+  orderHash  String
+  relayOrder RelayOrder @relation(fields: [orderHash], references: [hash])
+  attemptNum Int
+  baseTxHash String?
+  error      String?
+  createdAt  DateTime   @default(now())
+
+  @@index([orderHash])
 }
 
 model Ticket {
-  id              String      @id @default(uuid())
-  
-  orderHash       String   
-  relayOrder      RelayOrder  @relation(fields: [orderHash], references: [hash])
-  
-  bonusBall       Int
-  normalBalls     Int[]
+  id           String     @id @default(uuid())
+  orderHash    String
+  relayOrder   RelayOrder @relation(fields: [orderHash], references: [hash])
+  bonusBall    Int        @db.SmallInt
+  normalBalls  Int[]      @db.SmallInt
+  megapotNftId String? // from TicketsRouted event
+  winStatus    WinStatus  @default(DRAW_PENDING)
+  winAmount    BigInt     @default(0)
 
-  onChainTicketId String?
-
-  winStatus       WinStatus   @default(DRAW_PENDING)
-  winAmount      Int         @default(0)  
+  @@index([orderHash])
 }
 
-model GlobalState {
-  id              String      @id @default(uuid())
-  isPaused        Boolean     @default(false)
-  ongoingEpoch    Int  
+model IndexerCursor {
+  id        String   @id @default("solana_vault")
+  signature String? // last processed signature for poller
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Live protocol + current Megapot round (frontend ticket picker)
+ */
+model ProtocolState {
+  id              String    @id @default("singleton")
+  isPaused        Boolean   @default(false)
+  currentEpochId  Int?
+  endedAt         DateTime?
+  maxNormalBall   Int?      @db.SmallInt
+  maxBonusBall    Int?      @db.SmallInt
+  prizePoolAmount BigInt?
+  updatedAt       DateTime  @updatedAt
+}
+
+/**
+ * Settled past epochs only — drawing results history
+ */
+model MegapotEpoch {
+  megapotId Int @id
+
+  ticketCount          Int
+  uniqueParticipants   Int
+  winnersCount         Int
+  topPrizeAmount       BigInt
+  topPrizeWinnersCount Int
+  lpEarningsAmount     BigInt
+  winningNormals       Int[]  @db.SmallInt
+  winningBonusBall     Int    @db.SmallInt
+  prizeTiers           Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

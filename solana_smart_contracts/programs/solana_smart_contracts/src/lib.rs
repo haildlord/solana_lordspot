@@ -94,11 +94,11 @@ pub mod solana_smart_contracts {
         Ok(())
     }
 
-    pub fn resume_protocol(ctx: Context<ResumeProtocol>) -> Result<()> {
+    pub fn resume_protocol(ctx: Context<ResumeProtocol>, next_epoch: u64) -> Result<()> {
         let state = &mut ctx.accounts.lords_pot_state;
         state.is_lords_pot_paused = false;
         
-        state.ongoing_epoch += 1; 
+        state.ongoing_epoch = next_epoch; 
         
         msg!("Protocol Resumed. Rolled over to Epoch: {}", state.ongoing_epoch);
         Ok(())
@@ -225,6 +225,7 @@ pub struct PauseProtocol<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(next_epoch: u64)]
 pub struct ResumeProtocol<'info> {
     #[account(mut, constraint = admin.key() == lords_pot_state.admin @ LordsPotError::Unauthorized)]
     pub admin: Signer<'info>,
@@ -233,7 +234,8 @@ pub struct ResumeProtocol<'info> {
         mut,
         seeds = [b"lords_pot_state"], 
         bump = lords_pot_state.bump,
-        constraint = lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolNotPaused
+        constraint = lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolNotPaused,
+        constraint = next_epoch > lords_pot_state.ongoing_epoch @ LordsPotError::InvalidNextEpoch
     )]
     pub lords_pot_state: Account<'info, LordsPotState>,
 }
@@ -298,4 +300,6 @@ pub enum LordsPotError {
     TooManyTickets,
     #[msg("Same as values as Previous Epoch")]
     SameAsPreviousEpoch,
+    #[msg("The provided next epoch must be strictly greater than the current ongoing epoch.")]
+    InvalidNextEpoch,
 }

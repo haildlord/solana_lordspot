@@ -589,7 +589,12 @@ export type SolanaSmartContracts = {
           }
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "nextEpoch",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "updateEpoch",
@@ -735,6 +740,11 @@ export type SolanaSmartContracts = {
       "code": 6010,
       "name": "sameAsPreviousEpoch",
       "msg": "Same as values as Previous Epoch"
+    },
+    {
+      "code": 6011,
+      "name": "invalidNextEpoch",
+      "msg": "The provided next epoch must be strictly greater than the current ongoing epoch."
     }
   ],
   "types": [
