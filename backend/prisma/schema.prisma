@@ -68,6 +68,7 @@ model RelayOrder {
 
   @@index([status, nextRetryAt])
   @@index([buyer])
+  @@index([fulfillEpoch])
 }
 
 model RelayAttempt {
@@ -93,6 +94,7 @@ model Ticket {
   winAmount    BigInt     @default(0)
 
   @@index([orderHash])
+  @@index([winStatus])
 }
 
 model IndexerCursor {
@@ -130,6 +132,10 @@ model MegapotEpoch {
   winningNormals       Int[]  @db.SmallInt
   winningBonusBall     Int    @db.SmallInt
   prizeTiers           Json
+
+  // Settlement watermark: set only after EVERY ticket of this epoch has left
+  // DRAW_PENDING. NULL = settlement pass still owes work here (crash-safe).
+  ticketsSettledAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

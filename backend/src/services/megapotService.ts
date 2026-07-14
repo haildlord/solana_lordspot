@@ -97,19 +97,26 @@ class MegapotService {
     return (await this.megapotFetch('/rounds/active').then((r) =>
         r.json()
     )) as MegapotRoundResponse;
-  //   return (await fetch('https://mock-megapot-active-rounds.free.beeceptor.com/active-round').then((r) =>
+  //   return (await fetch('http://localhost:3000/rounds/active').then((r) =>
   //     r.json()
   // )) as MegapotRoundResponse;
   }
 
   private async fetchRoundById(megapotId: number): Promise<MegapotRoundResponse> {
+    
     console.log(`[SERVICE:megapot] Fetching historical round data for Epoch ID: ${megapotId}`);
+
     return (await this.megapotFetch(`/rounds/${megapotId}`).then((r) =>
         r.json()
     )) as MegapotRoundResponse;
+
+  //   return (await fetch(`http://localhost:3000/rounds/${megapotId}`).then((r) =>
+  //     r.json()
+  // )) as MegapotRoundResponse;
   }
 
   private async syncProtocolState(data: MegapotRoundResponse, isPaused: boolean) {
+
     const currentEpochId = parseInt(String(data.id), 10);
     console.log(`[DATABASE] Syncing ProtocolState singleton for Epoch ID: ${currentEpochId} (Paused: ${isPaused})`);
 
@@ -136,8 +143,12 @@ class MegapotService {
   }
 
   private async processActiveRound(data: MegapotRoundResponse): Promise<void> {
+
     console.log(`[SERVICE:megapot] Parsing and validating active round payload...`);
+
+    console.log("-->> BEFORE :", data);
     const parsedRound: RoundState = this.parseRoundState(data);
+    console.log("-->> AFTER :", parsedRound);
 
     const isPaused = (await redisConnection.get(this.PAUSE_KEY)) === 'true';
 
@@ -148,6 +159,7 @@ class MegapotService {
   }
 
   private async upsertSettledEpoch(data: MegapotRoundResponse): Promise<void> {
+
     if (data.status !== 'settled') return;
     if (!data.top_prize_amount || !data.winning_numbers || !data.prize_tiers) {
       console.warn(`[SERVICE:megapot] Epoch ${data.id} settled but missing drawing data — skipping DB upsert`);
@@ -186,25 +198,31 @@ class MegapotService {
   }
 
   private async syncAllSettledRounds(): Promise<void> {
+
     const limit = 100;
     let cursor: string | undefined;
     let has_more: boolean = true;
     let totalSynced = 0;
 
     try {
+      // 1. Get the highest known ID in ONE single query.
       const latestEpoch = await prisma.megapotEpoch.findFirst({
         orderBy: { megapotId: "desc" },
         select: { megapotId: true },
       });
 
-      const startId = latestEpoch?.megapotId ?? 0;
-      console.log(`[SERVICE:megapot] DB currently caught up to Epoch ${startId}. Initiating backwards sync...`);
+      // If DB is empty, set to 0 so EPOCH 1 syncs.
+      const highestDbId = latestEpoch?.megapotId ?? 0; 
+      console.log(`[SERVICE:megapot] DB max Epoch is ${highestDbId}. Initiating backwards sync...`);
 
       while (has_more) {
+
         const params = new URLSearchParams({ limit: limit.toString() });
         if (cursor) params.set("cursor", cursor);
 
         const response = await this.megapotFetch(`/rounds?${params.toString()}`);
+        // const response = await fetch(`http://localhost:3000/rounds?${params.toString()}`);
+
         const body = (await response.json()) as MegapotRoundsListResponse;
 
         if (!body.data?.length) break;
@@ -212,51 +230,62 @@ class MegapotService {
         let dbIsCaughtUp = false;
 
         for (const round of body.data) {
+
           if (round.status === 'active') {
             await this.processActiveRound(round);
             continue;
           }
 
-          if (round.status === 'settled' && round.id !== String(startId)) {
+          if (round.status === 'settled') {
             const megapotId = parseInt(String(round.id), 10);
 
-            const existing = await prisma.megapotEpoch.findUnique({
-              where: { megapotId },
-              select: { megapotId: true } 
-            });
-
-            if (existing) {
+            // 2. The Instant Halt Condition
+            // Since the DB has no gaps, if the API gives us an ID we already
+            // have (or lower), we are guaranteed to have everything below it too.
+            if (megapotId <= highestDbId) {
               console.log(`[DATABASE] Sync intersection reached at Epoch ${megapotId}. Halting historical sync.`);
               dbIsCaughtUp = true;
               break;
             }
 
+            // 3. Upsert ONLY if it's strictly greater than highestDbId
             await this.upsertSettledEpoch(round);
             totalSynced++;
           }
+
         }
 
         if (dbIsCaughtUp) break;
-
         if (!body.has_more || !body.next_cursor) break;
 
         has_more = body.has_more;
         cursor = body.next_cursor;
       }
 
-      if (totalSynced > 0) {
-        console.log(`[SERVICE:megapot] Backfill complete. Synchronized ${totalSynced} missing epochs.`);
-      } else {
-        console.log(`[SERVICE:megapot] Backfill complete. No new settled epochs found.`);
-      }
-
+      console.log(`[SERVICE:megapot] Backfill complete. Synchronized ${totalSynced} missing epochs.`);
     } catch (err: any) {
-      if (err.message === 'RATE_LIMIT_EXCEEDED') {
-        console.warn(`[API:megapot] Rate limit hit during massive backfill. Will resume on next cycle.`);
-      } else {
-        console.warn(`[SERVICE:megapot] Settled rounds list sync failed (non-fatal):`, err);
-      }
+        if (err.message === 'RATE_LIMIT_EXCEEDED') {
+          console.warn(`[API:megapot] Rate limit hit during massive backfill. Will resume on next cycle.`);
+        } else {
+          console.warn(`[SERVICE:megapot] Settled rounds list sync failed (non-fatal):`, err);
+        }
     }
+  }
+
+  /**
+   * On-demand fetch + persist of ONE settled epoch — used by the settlement
+   * worker to heal gaps (server down across a rollover, drawing data posted
+   * late). Safe no-op if the round isn't settled or drawing data is missing:
+   * upsertSettledEpoch() refuses those, so this can never store a live round.
+   */
+  public async ensureSettledEpochSynced(megapotId: number): Promise<boolean> {
+    try {
+      const round = await this.fetchRoundById(megapotId);
+      await this.upsertSettledEpoch(round);
+    } catch (err: any) {
+      console.warn(`[SERVICE:megapot] On-demand sync of epoch ${megapotId} failed (will retry next settlement tick):`, err?.message ?? err);
+    }
+    return (await prisma.megapotEpoch.count({ where: { megapotId } })) > 0;
   }
 
   public async getRoundState(): Promise<RoundState | null> {
@@ -348,6 +377,7 @@ class MegapotService {
     // after another process already completed the transition. Without this,
     // a late timer would PAUSE the protocol mid-epoch.
     const current = await this.getRoundState();
+
     if (
       current &&
       Date.now() < new Date(current.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS
@@ -359,14 +389,16 @@ class MegapotService {
     // Distributed lock: API timer and cron heartbeat may both fire — exactly
     // one proceeds. Renewed inside the wait loop for multi-hour Megapot outages.
     const lock = await redisConnection.set(
-      this.TRANSITION_LOCK_KEY, String(process.pid), 'EX', 600, 'NX'
+      this.TRANSITION_LOCK_KEY, String(process.pid), 'EX', 600, 'NX' // EX stands for secs, 600 secs is 10 mins, and NX represents only add if not present
     );
+
     if (lock === null) {
       console.log(`[CRON:transition] Another process holds the transition lock — skipping.`);
       return true;
     }
 
     try {
+
       try {
         console.log(`[CHAIN:solana] Broadcasting pause transaction to Solana smart contract...`);
         await solanaService.pauseProtocol();
@@ -401,9 +433,11 @@ class MegapotService {
       console.log(`[SERVICE:megapot] Awaiting Megapot API to roll over to the next Epoch...`);
 
       while (true) {
+        
         await redisConnection.expire(this.TRANSITION_LOCK_KEY, 600).catch(() => {});
 
         try {
+
           const fetchedRaw = await this.fetchActiveRoundRaw();
           consecutiveFailures = 0;
           const fetchedIdNum = parseInt(String(fetchedRaw.id), 10);
@@ -455,6 +489,7 @@ class MegapotService {
             console.error(`[ALERT] Megapot has not rolled over for ${Math.round(stuckMs / 60_000)} min. Protocol remains PAUSED (intended). Check Megapot/Base status!`);
             lastStuckAlertAt = Date.now();
           }
+          
         } catch (error) {
           consecutiveFailures++;
           console.error(`[SERVICE:megapot] Transition API fetch attempt ${consecutiveFailures} failed:`, error);
@@ -470,9 +505,11 @@ class MegapotService {
       console.log(`[CRON:transition] Transition Sequence Complete. Preparing next Cron job.`);
       await this.setupNextFetchCron();
       return true;
+
     } finally {
       await redisConnection.del(this.TRANSITION_LOCK_KEY).catch(() => {});
     }
+
   }
 
   private async ensureActiveRoundCached(): Promise<RoundState> {
@@ -491,6 +528,7 @@ class MegapotService {
   }
 
   private async setupNextFetchCron() {
+
     let saved: RoundState;
 
     try {
@@ -528,7 +566,7 @@ class MegapotService {
 
     try {
       
-      console.log(`[SERVICE:megapot] Phase 1: Backfilling historical epochs...`);
+       console.log(`[SERVICE:megapot] Phase 1: Backfilling historical epochs...`);
       await this.syncAllSettledRounds();
       
       console.log(`[SERVICE:megapot] Phase 2: Bootstrapping active round and cron timers...`);
@@ -536,6 +574,7 @@ class MegapotService {
       
       this.tryAfterSec = 1;
       this.isSyncing = false;
+
       console.log(`[SERVICE:megapot] ==== ENGINE BOOT SEQUENCE COMPLETE ====`);
 
     } catch (error) {
