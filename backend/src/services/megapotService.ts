@@ -18,7 +18,7 @@ class MegapotService {
   private readonly CACHE_KEY = 'megapot-active_round';
   private readonly PAUSE_KEY = 'megapot-is_paused';
   private readonly TRANSITION_LOCK_KEY = 'megapot-transition_lock';
-  private readonly PRE_EMPTIVE_BUFFER_MS = 60 * 1000;
+  private readonly PRE_EMPTIVE_BUFFER_MS = 30 * 1000;
 
   private toBigInt(amount: TokenAmount): bigint {
     return BigInt(amount.amount);
@@ -26,17 +26,21 @@ class MegapotService {
 
   /** STRICT VALIDATION: Ensures active round data is flawless before caching */
   private parseRoundState(data: MegapotRoundResponse): RoundState {
+
     if (!data) throw new Error('No data provided to parseRoundState');
 
     if (!data.id || data.status !== 'active') {
       throw new Error(`Invalid active round state: ID ${data.id}, Status: ${data.status}`);
     }
+
     if (!data.ball_pool?.normals_max || !data.ball_pool?.bonusball_max) {
       throw new Error('Missing or malformed ball_pool configuration');
     }
+
     if (!data.started_at || !data.ended_at) {
       throw new Error('Missing essential round timestamps');
     }
+
     if (!data.prize_pool?.amount) {
       throw new Error('Missing prize pool amounts');
     }
@@ -97,7 +101,7 @@ class MegapotService {
     return (await this.megapotFetch('/rounds/active').then((r) =>
         r.json()
     )) as MegapotRoundResponse;
-  //   return (await fetch('http://localhost:3000/rounds/active').then((r) =>
+  //   return (await fetch('http://localhost:3001/rounds/active').then((r) =>
   //     r.json()
   // )) as MegapotRoundResponse;
   }
@@ -110,7 +114,7 @@ class MegapotService {
         r.json()
     )) as MegapotRoundResponse;
 
-  //   return (await fetch(`http://localhost:3000/rounds/${megapotId}`).then((r) =>
+  //   return (await fetch(`http://localhost:3001/rounds/${megapotId}`).then((r) =>
   //     r.json()
   // )) as MegapotRoundResponse;
   }
@@ -221,7 +225,7 @@ class MegapotService {
         if (cursor) params.set("cursor", cursor);
 
         const response = await this.megapotFetch(`/rounds?${params.toString()}`);
-        // const response = await fetch(`http://localhost:3000/rounds?${params.toString()}`);
+        // const response = await fetch(`http://localhost:3001/rounds?${params.toString()}`);
 
         const body = (await response.json()) as MegapotRoundsListResponse;
 

@@ -5,6 +5,7 @@ import { SolanaSmartContracts } from "../target/types/solana_smart_contracts";
 import "dotenv/config";
 
 async function main() {
+
   // 1. Tell Anchor to automatically use the default environment configuration
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -17,7 +18,7 @@ async function main() {
     while (numbers.size < 5) {
       numbers.add(Math.floor(Math.random() * 30) + 1);
     }
-    const special = Math.floor(Math.random() * 12) + 1;
+    const special = Math.floor(Math.random() * 10) + 1;
     return {
       numbers: [...numbers].sort((a, b) => a - b),
       special,
@@ -28,14 +29,53 @@ async function main() {
   
   let tickets_to_buy = [];
 
-    // Loop 3 times to generate 3 unique tickets
-    for (let i = 0; i < 3; i++) {
-        const { numbers, special } = generateLottery();
-        tickets_to_buy.push({
-          normalBall: Buffer.from(numbers),
-          bonusBall: special,
-        });
-      }
+  tickets_to_buy = [
+    // Tier 11
+    { normalBall: Buffer.from([3,10,16,22,23]), bonusBall: 5 },
+  
+    // Tier 10
+    { normalBall: Buffer.from([3,10,16,22,23]), bonusBall: 7 },
+  
+    // Tier 9
+    { normalBall: Buffer.from([3,10,16,22,25]), bonusBall: 5 },
+  
+    // Tier 8
+    { normalBall: Buffer.from([3,10,16,22,25]), bonusBall: 8 },
+  
+    // Tier 7
+    { normalBall: Buffer.from([3,10,16,27,28]), bonusBall: 5 },
+  
+    // Tier 6
+    { normalBall: Buffer.from([3,10,16,27,28]), bonusBall: 9 },
+  
+    // Tier 5
+    { normalBall: Buffer.from([1,3,10,29,30]), bonusBall: 5 },
+  
+    // Tier 4
+    { normalBall: Buffer.from([1,3,10,29,30]), bonusBall: 6 },
+  
+    // Tier 3
+    { normalBall: Buffer.from([3,11,12,13,14]), bonusBall: 5 },
+  
+    // Tier 2
+    { normalBall: Buffer.from([3,11,12,13,14]), bonusBall: 7 },
+  
+    // Tier 1
+    { normalBall: Buffer.from([6,7,8,9,11]), bonusBall: 5 },
+  
+    // Tier 0
+    { normalBall: Buffer.from([6,7,8,9,11]), bonusBall: 4 },
+  ];
+
+    // // Loop 3 times to generate 3 unique tickets
+    // for (let i = 0; i < 3; i++) {
+    //     const { numbers, special } = generateLottery();
+    //     tickets_to_buy.push({
+    //       normalBall: Buffer.from(numbers),
+    //       bonusBall: special,
+    //     });
+    //   }
+
   console.log("🎟️ Buying Ticket:", tickets_to_buy);
 
   try {

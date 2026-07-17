@@ -23,9 +23,9 @@ class SolanaService {
   private statePda: PublicKey;
 
   private readonly FALLBACK_PRIORITY_FEE = 1000;
-  private readonly CU_LIMIT_PAUSE = 25000;
-  private readonly CU_LIMIT_UNPAUSE_ONLY = 25000;
-  private readonly CU_LIMIT_UPDATE_UNPAUSE = 50000;
+  private readonly CU_LIMIT_PAUSE = 15_000;
+  private readonly CU_LIMIT_UNPAUSE_ONLY = 15_000;
+  private readonly CU_LIMIT_UPDATE_UNPAUSE = 25_000;
 
   constructor() {
     this.isMainnet =

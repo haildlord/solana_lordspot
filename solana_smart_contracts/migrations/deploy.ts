@@ -47,8 +47,8 @@ module.exports = async function (provider: anchor.AnchorProvider) {
   console.log(`[Deploy]: New Fee Payer / Admin Authority: ${customProvider.wallet.publicKey.toBase58()}`);
 
   // Game rules configuration parameters
-  const NORMAL_MAX = 10; 
-  const BONUS_MAX = 12;
+  const NORMAL_MAX = 30; 
+  const BONUS_MAX = 10;
   const TICKET_PRICE = new anchor.BN(1_000_000); // $1.00 USDC (6 decimals)
   const INIT_EPOCH = new anchor.BN(112);
   console.log("--------------------------------------------------");

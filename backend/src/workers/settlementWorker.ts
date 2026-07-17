@@ -14,9 +14,17 @@ import { onShutdown } from '../lib/shutdown';
  *
  * "Won" means payout > 0, NEVER "matched something" — real tier tables pay 0
  * on some matching tiers (e.g. 1 normal + no bonus) while 0-normals+bonusball
- * pays. winAmount stores the GROSS tier payout; the net (after Megapot's
- * referral win-share skim) is only knowable at harvest time from the
- * TicketWinningsClaimed event and is recorded by that later phase.
+ * pays. winAmount stores the NET payout: gross tier payout minus Megapot's 10%
+ * referral win-share, mirroring the claim contract's exact integer math
+ * (share = floor(gross × share/UNIT), net = gross − share — NOT floor(gross×0.9),
+ * which differs by 1 unit on some amounts). Harvest receipts
+ * (TicketWinningsClaimed events) remain the final authority and should
+ * reconcile against these values.
+ *
+ * Free-ticket tiers (tier 1: bonusball only, tier 4: 2 normals no bonus) are
+ * marked WON_FREE_TICKET instead of WON_UNCLAIMED — product redeems those as a
+ * new ticket rather than a cash payout. Note their net is ticketPrice + 1 unit
+ * of floor dust (1111112 − 111111 = 1000001).
  *
  * Durability: MegapotEpoch.ticketsSettledAt is the watermark — NULL rows are
  * unfinished work, set only after every ticket left DRAW_PENDING. A server
@@ -35,7 +43,16 @@ import { onShutdown } from '../lib/shutdown';
 const POLL_MS = 60_000;
 const TICKET_BATCH = 500;
 const MAX_BATCHES_PER_EPOCH = 2_000; // runaway guard: 1M tickets/epoch hard stop
-const BIG_WIN_ALERT_UNITS = 1_000_000_000n; // $1,000 (6dp) — page a human, liquidity may be needed
+const BIG_WIN_ALERT_UNITS = 1_000_000_000n; // $1,000 net (6dp) — page a human, liquidity may be needed
+
+// Megapot skims this off every win at claim time (drawingState.referralWinShare).
+// We are the referrer, so the skim flows back to our reward wallet — but the
+// USER's payout is net of it. 1000 bps = 10%.
+const REFERRAL_WIN_SHARE_BPS = 1_000n;
+
+// Tiers redeemed as a free ticket instead of cash: 1 (bonusball only) and
+// 4 (2 normals, no bonus). Gross 1111112 is engineered so net ≈ ticketPrice.
+const FREE_TICKET_TIERS = new Set([1, 4]);
 
 interface GradableTicket {
   id: string;
@@ -122,21 +139,35 @@ async function settleEpoch(epoch: {
     });
     if (tickets.length === 0) break;
 
-    // Group by payout so a 500-ticket page settles in a handful of updateMany
-    // calls (losers are one group; winners share few distinct tier amounts).
+    // Group by (status, net payout) so a 500-ticket page settles in a handful
+    // of updateMany calls (losers are one group; winners share few tiers).
     const losers: string[] = [];
-    const winnersByAmount = new Map<bigint, string[]>();
+    const winnersByGroup = new Map<
+      string,
+      { status: 'WON_UNCLAIMED' | 'WON_FREE_TICKET'; amount: bigint; ids: string[] }
+    >();
 
     for (const t of tickets) {
       const tierId = calcTierId(t.normalBalls, t.bonusBall, winningSet, epoch.winningBonusBall);
-      const payout = tiers.get(tierId) ?? 0n;
-      if (payout > 0n) {
-        const group = winnersByAmount.get(payout) ?? [];
-        group.push(t.id);
-        winnersByAmount.set(payout, group);
-      } else {
+      const gross = tiers.get(tierId) ?? 0n;
+      if (gross === 0n) {
         losers.push(t.id);
+        continue;
       }
+
+      // Mirror the claim contract's integer math exactly: floor the SHARE,
+      // then subtract — this is what the vault will actually receive per ticket.
+      const referrerShare = (gross * REFERRAL_WIN_SHARE_BPS) / 10_000n;
+      const net = gross - referrerShare;
+
+      const status = FREE_TICKET_TIERS.has(tierId)
+        ? ('WON_FREE_TICKET' as const)
+        : ('WON_UNCLAIMED' as const);
+
+      const key = `${status}|${net}`;
+      const group = winnersByGroup.get(key) ?? { status, amount: net, ids: [] };
+      group.ids.push(t.id);
+      winnersByGroup.set(key, group);
     }
 
     await prisma.$transaction([
@@ -146,20 +177,24 @@ async function settleEpoch(epoch: {
             data: { winStatus: 'LOST' },
           })]
         : []),
-      ...[...winnersByAmount.entries()].map(([amount, ids]) =>
+      ...[...winnersByGroup.values()].map(({ status, amount, ids }) =>
         prisma.ticket.updateMany({
           where: { id: { in: ids }, winStatus: 'DRAW_PENDING' },
-          data: { winStatus: 'WON_UNCLAIMED', winAmount: amount },
+          data: { winStatus: status, winAmount: amount },
         })
       ),
     ]);
 
     graded += tickets.length;
-    for (const [amount, ids] of winnersByAmount) {
+    for (const { status, amount, ids } of winnersByGroup.values()) {
       winners += ids.length;
-      console.log(`[settlement] 🏆 Epoch ${epoch.megapotId}: ${ids.length} ticket(s) WON ${amount} units each (gross)`);
+      if (status === 'WON_FREE_TICKET') {
+        console.log(`[settlement] 🎟️ Epoch ${epoch.megapotId}: ${ids.length} ticket(s) WON A FREE TICKET (${amount} units net each)`);
+      } else {
+        console.log(`[settlement] 🏆 Epoch ${epoch.megapotId}: ${ids.length} ticket(s) WON ${amount} units each (net of 10% referral share)`);
+      }
       if (amount >= BIG_WIN_ALERT_UNITS) {
-        console.error(`[ALERT][settlement] BIG WIN in epoch ${epoch.megapotId}: ${amount} units/ticket × ${ids.length} — verify payout liquidity before users claim!`);
+        console.error(`[ALERT][settlement] BIG WIN in epoch ${epoch.megapotId}: ${amount} units/ticket (net) × ${ids.length} — verify payout liquidity before users claim!`);
       }
     }
 
