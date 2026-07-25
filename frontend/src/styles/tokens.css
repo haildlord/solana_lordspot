@@ -1,0 +1,80 @@
+/**
+ * LordsPot design tokens — the single source of truth for the visual system.
+ * Every component/page CSS module consumes these variables instead of
+ * hardcoding colors, spacing, or radii, so the whole app stays visually
+ * consistent and re-themeable from one file.
+ */
+:root {
+  /* --- Surface --- */
+  --color-bg: #030305;
+  --color-surface: #0a0a0c;
+  --color-surface-raised: #111114;
+  --color-surface-glass: rgba(12, 12, 16, 0.55);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  /* --- Text --- */
+  --color-text: #f5f5f7;
+  --color-text-dim: #9a9aa5;
+  --color-text-faint: #5c5c68;
+
+  /* --- Brand: gold (primary / value / wins) --- */
+  --color-gold-100: #ffe58a;
+  --color-gold-300: #ffd700;
+  --color-gold-500: #d4af37;
+  --color-gold-700: #b8860b;
+  --gradient-gold: linear-gradient(135deg, var(--color-gold-100), var(--color-gold-500) 55%, var(--color-gold-700));
+
+  /* --- Brand: violet (secondary / accents / countdowns) --- */
+  --color-violet-300: #c084fc;
+  --color-violet-500: #a855f7;
+  --color-violet-700: #7e14ff;
+
+  /* --- Semantic --- */
+  --color-success: #34d399;
+  --color-success-bg: rgba(52, 211, 153, 0.12);
+  --color-danger: #f87171;
+  --color-danger-bg: rgba(248, 113, 113, 0.12);
+  --color-info: #38bdf8;
+
+  /* --- Spacing scale --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* --- Radii --- */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 999px;
+
+  /* --- Typography --- */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-sans);
+
+  /* --- Shadows / glow --- */
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-gold-glow: 0 0 24px rgba(212, 175, 55, 0.22);
+  --shadow-violet-glow: 0 0 24px rgba(168, 85, 247, 0.2);
+
+  /* --- Motion --- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 450ms;
+
+  /* --- Layout --- */
+  --nav-height: 72px;
+  --content-max: 720px;
+  --z-nav: 100;
+  --z-overlay: 500;
+  --z-modal: 600;
+}

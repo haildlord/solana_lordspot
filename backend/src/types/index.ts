@@ -74,3 +74,24 @@ export interface RoundState {
   ticket_count: number;
   unique_participants: number;
 }
+
+export interface DuneMetricsRow {
+  jackpots_won?: string | number;
+  prizes_won?: string | number;
+  baseVault_tvl?: number;
+  relayer_eth?: number;
+  referrer_earned?: number;
+  total_tickets_bought?: number;
+}
+
+export interface DuneQueryResultsResponse {
+  result?: {
+    rows?: DuneMetricsRow[];
+  };
+}
+
+export interface FormattedPrizeTier {
+  tierId: number;
+  amount: string;
+  ticketCount: number;
+}

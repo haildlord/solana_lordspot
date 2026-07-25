@@ -31,6 +31,8 @@ interface IJackpot {
         uint256[] calldata _referralSplitBps,
         bytes32 _source
     ) external returns (uint256[] memory ticketIds);
+
+    function claimWinnings(uint256[] calldata _userTicketIds) external;
 }
  
 contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
@@ -43,6 +45,7 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
     error OldAddressProvided();
     error InvalidAddress();
     error OrderAlreadyProcessed();
+    error NoTicketsToClaim();
 
     // --- State Storage ---
     mapping(bytes32 => bool) internal isOrderFulfilled;
@@ -58,6 +61,7 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
 
     // --- Production Events ---
     event TicketsRouted(bytes32 indexed orderId, uint256 ticketCount, bytes32 indexed source, uint256[] ticketIds);
+    event WinningsHarvested(uint256 ticketCount, uint256 amountHarvested);
     event UsdcWithdrawn(address indexed to, uint256 amount);
     event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
     event MegapotAddressUpdated(address indexed oldMegapot, address indexed newMegapot);
@@ -132,6 +136,41 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
         );
 
         emit TicketsRouted(_orderId, _tickets.length, _source, _ticketIds);
+    }
+
+    /**
+     * @notice Harvests winnings for vault-owned Megapot ticket NFTs into this vault.
+     * @dev Megapot pays `msg.sender` (this vault) and burns the NFTs, so a second
+     *      call with the same ids reverts inside Megapot (NotTicketOwner) — Megapot's
+     *      burn IS the idempotency guard; the vault needs no mapping of its own.
+     *
+     *      Deliberately NOT `whenNotPaused`: this function can only move USDC from
+     *      Megapot INTO the vault — never out. During an incident you want to pause
+     *      buys yet still be able to pull winnings to safety. A compromised relayer
+     *      calling this gains nothing: funds land here, and only the owner can
+     *      withdraw them (withdrawUsdc).
+     *
+     *      No reentrancy guard needed: no vault state is written, Megapot's
+     *      claimWinnings is nonReentrant on its side, and USDC has no transfer hooks.
+     *
+     *      CALLER NOTE (backend): one invalid id (already burned / wrong drawing /
+     *      not vault-owned) reverts the ENTIRE batch inside Megapot's loop —
+     *      pre-validate every id with free view calls (ownerOf, getTicketInfo)
+     *      and chunk batches to keep the blast radius small.
+     * @param _ticketIds Megapot ticket NFT ids (NOT LordsPot order ids) to claim.
+     */
+    function claimWinnings(uint256[] calldata _ticketIds) external onlyRelayer {
+        if (_ticketIds.length == 0) revert NoTicketsToClaim();
+
+        IERC20 usdc = IERC20(vaultInfo.usdcAddress);
+        uint256 balanceBefore = usdc.balanceOf(address(this));      // 1. CHECK (snapshot)
+
+        vaultInfo.megapotAddress.claimWinnings(_ticketIds);         // 2. INTERACTION (trusted, nonReentrant)
+
+        uint256 harvested = usdc.balanceOf(address(this)) - balanceBefore;
+        emit WinningsHarvested(_ticketIds.length, harvested);
+        // Per-ticket net amounts are NOT recomputed here — the backend reads them
+        // from Megapot's own TicketWinningsClaimed events in this same receipt.
     }
 
     // --- Treasury Management ---

@@ -15,11 +15,14 @@ function requiredOneOf(keys: string[]): string {
 }
 
 export const config = {
+
   port: parseInt(process.env.PORT ?? '3000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development', // ! what is this what to put.
   inlineWorkers: process.env.INLINE_WORKERS === 'true',
   databaseUrl: required('DATABASE_URL'),
   redisUrl: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
+  duneUrl: required('DUNE_URL'),
+  duneApiKey: required('DUNE_API_KEY'),
 
   solana: {
     rpcUrl: required('SOLANA_RPC_URL'),
@@ -39,7 +42,10 @@ export const config = {
       'BASE_REWARD_WALLET_ADDRESS',
     ]),
     referralSplit: BigInt('1000000000000000000'),
-    usdcAddress: required(`USDC_BASE_ADDRESS`)
+    usdcAddress: required(`USDC_BASE_ADDRESS`),
+    // Megapot's own Jackpot contract on Base (not our vault) — read-only
+    // calls only (getDrawingTierPayouts), never a tx target.
+    megapotJackpotAddress: required('MEGAPOT_BASE_ADDRESS')
   },
 
   megapot: {
@@ -53,9 +59,9 @@ export const config = {
 
   relay: {
     maxAttempts: 50,
-    baseBackoffMs: 5_000,
-    maxBackoffMs: 300_000,
-    processingTimeoutMs: 5 * 60_000,
+    baseBackoffMs: 5_000, // When a transaction/order fails, the system will wait 5 seconds before trying again
+    maxBackoffMs: 300_000, // No matter how many times it fails, the system will never wait more than 5 minutes between retries.
+    processingTimeoutMs: 5 * 60_000, // This is the maximum time allowed for one processing attempt to complete.
     minVaultUsdc: BigInt(process.env.MIN_BASE_VAULT_USDC ?? '100000000'),
   },
 } as const;

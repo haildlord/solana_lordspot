@@ -40,7 +40,7 @@ import { onShutdown } from '../lib/shutdown';
  * misread table — the failure mode "winner marked LOST" must be impossible.
  */
 
-const POLL_MS = 60_000;
+const POLL_MS = 60_000;             // 1 min
 const TICKET_BATCH = 500;
 const MAX_BATCHES_PER_EPOCH = 2_000; // runaway guard: 1M tickets/epoch hard stop
 const BIG_WIN_ALERT_UNITS = 1_000_000_000n; // $1,000 net (6dp) — page a human, liquidity may be needed
@@ -75,10 +75,8 @@ export function calcTierId(
 }
 
 /**
- * Parse prizeTiers JSON into tierId → gross payout (6dp base units).
- * THROWS on any shape drift — including a tier_id that contradicts its own
- * normal_matches/bonusball_match fields — so a silent API format change can
- * never mis-grade tickets.
+ * Parse our internally formatted prizeTiers JSON into tierId → net payout (6dp base units).
+ * THROWS on any shape drift to ensure we never mis-grade tickets.
  */
 export function parsePrizeTiers(json: unknown): Map<number, bigint> {
   if (!Array.isArray(json) || json.length === 0) {
@@ -86,22 +84,28 @@ export function parsePrizeTiers(json: unknown): Map<number, bigint> {
   }
 
   const tiers = new Map<number, bigint>();
+  
   for (const entry of json) {
-    const tierId = entry?.tier_id;
-    const amount = entry?.payout?.amount;
-    const normalMatches = entry?.normal_matches;
-    const bonusMatch = entry?.bonusball_match;
+    // 1. Read from our new flattened database structure (camelCase)
+    const tierId = entry?.tierId;
+    const amount = entry?.amount;
 
-    if (!Number.isInteger(tierId) || typeof amount !== 'string' || !/^\d+$/.test(amount)) {
+    const numericTierId = Number(tierId);
+
+    // 2. Strict validation on the new shape
+    if (!Number.isInteger(numericTierId) || typeof amount !== 'string' || !/^\d+$/.test(amount)) {
       throw new Error(`Malformed prize tier entry: ${JSON.stringify(entry)}`);
     }
-    if (tierId !== 2 * normalMatches + (bonusMatch ? 1 : 0)) {
-      throw new Error(
-        `Tier encoding mismatch: tier_id=${tierId} but normal_matches=${normalMatches}, bonusball_match=${bonusMatch}`
-      );
-    }
-    tiers.set(tierId, BigInt(amount));
+
+    // Note: We removed the `tierId === 2 * normalMatches + ...` check.
+    // Why? Because we stripped those fields out of the JSON in MegapotService 
+    // to save DB space, and we implicitly trust this data now since we 
+    // sanitized and formatted it ourselves before insertion.
+
+    // 3. Map it for the settlement engine
+    tiers.set(numericTierId, BigInt(amount));
   }
+  
   return tiers;
 }
 
@@ -126,7 +130,7 @@ async function settleEpoch(epoch: {
   let graded = 0;
   let winners = 0;
 
-  for (let batch = 0; batch < MAX_BATCHES_PER_EPOCH; batch++) {
+  for (let batch = 0; batch < MAX_BATCHES_PER_EPOCH; batch++) { // * MAX_BATCHES_PER_EPOCH : 2000
     // Only tickets from SUCCESS orders — fulfillEpoch is authoritative for
     // which drawing the tickets actually entered (purchaseEpoch is not).
     const tickets: GradableTicket[] = await prisma.ticket.findMany({
@@ -135,8 +139,9 @@ async function settleEpoch(epoch: {
         relayOrder: { fulfillEpoch: epoch.megapotId, status: 'SUCCESS' },
       },
       select: { id: true, normalBalls: true, bonusBall: true },
-      take: TICKET_BATCH,
+      take: TICKET_BATCH, // * 500
     });
+
     if (tickets.length === 0) break;
 
     // Group by (status, net payout) so a 500-ticket page settles in a handful
@@ -148,6 +153,7 @@ async function settleEpoch(epoch: {
     >();
 
     for (const t of tickets) {
+      
       const tierId = calcTierId(t.normalBalls, t.bonusBall, winningSet, epoch.winningBonusBall);
       const gross = tiers.get(tierId) ?? 0n;
       if (gross === 0n) {
@@ -180,12 +186,19 @@ async function settleEpoch(epoch: {
       ...[...winnersByGroup.values()].map(({ status, amount, ids }) =>
         prisma.ticket.updateMany({
           where: { id: { in: ids }, winStatus: 'DRAW_PENDING' },
-          data: { winStatus: status, winAmount: amount },
+          // isFreeTicketTier must survive past CLAIMED_ON_BASE (where the
+          // winStatus distinction is lost) — payout vouchers exclude these.
+          data: {
+            winStatus: status,
+            winAmount: amount,
+            isFreeTicketTier: status === 'WON_FREE_TICKET',
+          },
         })
       ),
     ]);
 
     graded += tickets.length;
+
     for (const { status, amount, ids } of winnersByGroup.values()) {
       winners += ids.length;
       if (status === 'WON_FREE_TICKET') {
@@ -198,9 +211,9 @@ async function settleEpoch(epoch: {
       }
     }
 
-    if (tickets.length < TICKET_BATCH) break;
+    if (tickets.length < TICKET_BATCH) break; // * TICKET_BATCH : 500
 
-    if (batch === MAX_BATCHES_PER_EPOCH - 1) {
+    if (batch === MAX_BATCHES_PER_EPOCH - 1) { // * MAX_BATCHES_PER_EPOCH : 2_000
       console.error(`[ALERT][settlement] Epoch ${epoch.megapotId} exceeded ${MAX_BATCHES_PER_EPOCH} batches — leaving unsettled, will resume next tick.`);
       return false;
     }
@@ -233,6 +246,7 @@ async function healMissingEpochs(): Promise<void> {
       AND ro.status = 'SUCCESS'
       AND ro."fulfillEpoch" IS NOT NULL
   `;
+
   if (pendingEpochs.length === 0) return;
 
   const current = await megapotService.getRoundState(); // null-safe: upsert itself refuses non-settled rounds
@@ -268,6 +282,7 @@ export async function runSettlementTick(): Promise<void> {
   if (tickInFlight) return;
   tickInFlight = true;
   try {
+    
     await healMissingEpochs();
 
     const unsettled = await prisma.megapotEpoch.findMany({
@@ -288,17 +303,18 @@ export async function runSettlementTick(): Promise<void> {
   }
 }
 
-let intervalHandle: NodeJS.Timeout | null = null;
+let intervalId: NodeJS.Timeout | null = null;
 
 export function startSettlementWorker(): void {
-  if (intervalHandle) return; // singleton per process
+
+  if (intervalId) return; // singleton per process
 
   void runSettlementTick(); // immediate catch-up on boot, don't wait a full interval
 
-  intervalHandle = setInterval(() => void runSettlementTick(), POLL_MS);
+  intervalId = setInterval(() => void runSettlementTick(), POLL_MS); // 1 min
 
   onShutdown('settlement-worker', () => {
-    if (intervalHandle) clearInterval(intervalHandle);
+    if (intervalId) clearInterval(intervalId);
   });
 
   console.log(`[settlement] Ticket settlement worker online (every ${POLL_MS / 1000}s)`);

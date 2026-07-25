@@ -2,6 +2,7 @@ import {
   PublicKey,
   Connection,
   Keypair,
+  Transaction,
   TransactionSignature,
   ComputeBudgetProgram,
   TransactionMessage,
@@ -26,6 +27,10 @@ class SolanaService {
   private readonly CU_LIMIT_PAUSE = 15_000;
   private readonly CU_LIMIT_UNPAUSE_ONLY = 15_000;
   private readonly CU_LIMIT_UPDATE_UNPAUSE = 25_000;
+  // Claim voucher: SPL transfer + constraint checks + possible ATA creation
+  // (~20-25k CU by itself when it fires) — sized with real margin, per the
+  // "consumed 4700 of 4700" lesson.
+  private readonly CU_LIMIT_CLAIM = 80_000;
 
   constructor() {
     this.isMainnet =
@@ -205,6 +210,82 @@ class SolanaService {
 
   public async getOnChainState() {
     return this.program.account.lordsPotState.fetch(this.statePda);
+  }
+
+  public getConnection(): Connection {
+    return this.connection;
+  }
+
+  /**
+   * Builds a claim VOUCHER: a claim_winnings transaction carrying the exact
+   * amount owed, PARTIALLY SIGNED by the admin key. The user counter-signs in
+   * their wallet and submits. Two deliberate choices:
+   *
+   * - ADMIN IS THE FEE PAYER. On Solana the tx signature IS the fee payer's
+   *   signature — so we know the final signature the moment we partial-sign,
+   *   BEFORE the user ever sees the voucher. That lets the payout confirmer
+   *   poll the chain directly (getSignatureStatuses) with zero trust in
+   *   frontend callbacks. Cost: ~5000 lamports (~$0.001) per LANDED claim,
+   *   nothing for unused vouchers. (Also means winners need no SOL to claim,
+   *   unless their USDC ATA was closed — ATA re-creation rent is theirs.)
+   *
+   * - LEGACY Transaction (not v0): the partial-sign → serialize(requireAll:
+   *   false) → wallet co-sign flow is the battle-tested path every wallet
+   *   adapter supports.
+   *
+   * NOTE: `claimWinnings` appears in the IDL only after `anchor build` +
+   * `npm run build:program` — the `as any` cast is removable once the
+   * regenerated types land.
+   */
+  public async buildClaimVoucher(
+    userWallet: string,
+    amount: bigint
+  ): Promise<{ transactionBase64: string; txSignature: string; lastValidBlockHeight: number }> {
+    const user = new PublicKey(userWallet);
+
+    // ATAs + PDAs resolve automatically from the IDL's account constraints.
+    const claimIx: TransactionInstruction = await (this.program.methods as any)
+      .claimWinnings(new BN(amount.toString()))
+      .accounts({ user, admin: this.wallet.publicKey })
+      .instruction();
+
+    const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash();
+
+    const priorityFee = await this.getPriorityFeeEstimate(
+      Buffer.from(
+        new VersionedTransaction(
+          new TransactionMessage({
+            payerKey: this.wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [claimIx],
+          }).compileToV0Message()
+        ).serialize()
+      ).toString('base64')
+    );
+
+    const tx = new Transaction({
+      feePayer: this.wallet.publicKey,
+      blockhash,
+      lastValidBlockHeight,
+    });
+    tx.add(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: this.CU_LIMIT_CLAIM }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityFee }),
+      claimIx
+    );
+
+    tx.partialSign(this.wallet.payer);
+
+    const sigBytes = tx.signature; // fee payer's signature = THE tx signature
+    if (!sigBytes) throw new Error('Voucher signing failed — no admin signature produced');
+
+    return {
+      transactionBase64: tx
+        .serialize({ requireAllSignatures: false, verifySignatures: false })
+        .toString('base64'),
+      txSignature: bs58.encode(sigBytes),
+      lastValidBlockHeight,
+    };
   }
 }
 

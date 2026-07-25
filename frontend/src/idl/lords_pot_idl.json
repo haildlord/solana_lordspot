@@ -1,0 +1,836 @@
+{
+  "address": "5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo",
+  "metadata": {
+    "name": "solana_smart_contracts",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "buy_ticket",
+      "discriminator": [
+        11,
+        24,
+        17,
+        193,
+        168,
+        116,
+        164,
+        169
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "lords_pot_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer_usdc_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "signer"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_usdc_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "vault_authority"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "tickets",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "Ticket"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "writable": true,
+          "signer": true,
+          "address": "AigbEGvypACrUq7hgjNwCDfd8SfcgfTH6esHu8maHysS"
+        },
+        {
+          "name": "lords_pot_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_usdc_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "vault_authority"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdc_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "usdc_mint",
+          "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "normal_max",
+          "type": "u8"
+        },
+        {
+          "name": "bonus_max",
+          "type": "u8"
+        },
+        {
+          "name": "ticket_price",
+          "type": "u64"
+        },
+        {
+          "name": "starting_epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "pause_protocol",
+      "discriminator": [
+        144,
+        95,
+        0,
+        107,
+        119,
+        39,
+        248,
+        141
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "lords_pot_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "resume_protocol",
+      "discriminator": [
+        62,
+        91,
+        76,
+        18,
+        174,
+        87,
+        87,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "lords_pot_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "next_epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_epoch",
+      "discriminator": [
+        218,
+        126,
+        55,
+        95,
+        96,
+        35,
+        241,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "lords_pot_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "normal_max",
+          "type": "u8"
+        },
+        {
+          "name": "bonus_max",
+          "type": "u8"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "LordsPotState",
+      "discriminator": [
+        9,
+        156,
+        79,
+        177,
+        160,
+        143,
+        34,
+        17
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "TicketPurchaseEvent",
+      "discriminator": [
+        106,
+        28,
+        171,
+        84,
+        39,
+        119,
+        78,
+        243
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ProtocolPaused",
+      "msg": "Ticket sales are frozen during the epoch rollover."
+    },
+    {
+      "code": 6001,
+      "name": "ProtocolNotPaused",
+      "msg": "The protocol is already active and not paused."
+    },
+    {
+      "code": 6002,
+      "name": "Unauthorized",
+      "msg": "You are not authorized to perform this admin action."
+    },
+    {
+      "code": 6003,
+      "name": "NoTicketsProvided",
+      "msg": "You must provide at least one ticket to purchase."
+    },
+    {
+      "code": 6004,
+      "name": "InvalidTicketLength",
+      "msg": "A ticket must contain exactly 5 normal numbers."
+    },
+    {
+      "code": 6005,
+      "name": "NormalBallOutOfBounds",
+      "msg": "A regular number selection exceeds the max allowed for this round."
+    },
+    {
+      "code": 6006,
+      "name": "BonusBallOutOfBounds",
+      "msg": "The bonus number selection exceeds the max allowed for this round."
+    },
+    {
+      "code": 6007,
+      "name": "BallsNotSortedOrDuplicated",
+      "msg": "Ticket numbers must be strictly unique and submitted in ascending order."
+    },
+    {
+      "code": 6008,
+      "name": "MathOverflow",
+      "msg": "A mathematical overflow occurred during price calculation."
+    },
+    {
+      "code": 6009,
+      "name": "TooManyTickets",
+      "msg": "You cannot purchase more than 100 tickets in a single transaction."
+    },
+    {
+      "code": 6010,
+      "name": "SameAsPreviousEpoch",
+      "msg": "Same as values as Previous Epoch"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidNextEpoch",
+      "msg": "The provided next epoch must be strictly greater than the current ongoing epoch."
+    }
+  ],
+  "types": [
+    {
+      "name": "LordsPotState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "normal_max",
+            "type": "u8"
+          },
+          {
+            "name": "bonus_max",
+            "type": "u8"
+          },
+          {
+            "name": "ticket_price",
+            "type": "u64"
+          },
+          {
+            "name": "ongoing_epoch",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "is_lords_pot_paused",
+            "type": "bool"
+          },
+          {
+            "name": "admin",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Ticket",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "normal_ball",
+            "type": "bytes"
+          },
+          {
+            "name": "bonus_ball",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketPurchaseEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_paid",
+            "type": "u64"
+          },
+          {
+            "name": "tickets_bought",
+            "type": "u32"
+          },
+          {
+            "name": "tickets_data",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "Ticket"
+                }
+              }
+            }
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

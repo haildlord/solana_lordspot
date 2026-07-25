@@ -1,0 +1,278 @@
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  width: 100%;
+  background: linear-gradient(to bottom, rgba(3, 3, 5, 0.92), rgba(3, 3, 5, 0.75));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inner {
+  max-width: 1200px;
+  height: var(--nav-height);
+  margin: 0 auto;
+  padding: 0 var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.links {
+  display: none;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+@media (min-width: 900px) {
+  .links {
+    display: flex;
+  }
+}
+
+.link {
+  position: relative;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-text-dim);
+  padding: var(--space-2) 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.link:hover {
+  color: var(--color-text);
+}
+
+.linkActive {
+  color: var(--color-text);
+}
+
+.linkActive::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--gradient-gold);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.6);
+  border-radius: var(--radius-full);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-violet-500);
+  box-shadow: 0 0 6px rgba(168, 85, 247, 0.8);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.menuToggle {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 900px) {
+  .menuToggle {
+    display: none;
+  }
+}
+
+.iconClosed,
+.iconOpen {
+  position: relative;
+  width: 18px;
+  height: 12px;
+}
+
+.iconClosed::before,
+.iconClosed::after,
+.iconOpen::before,
+.iconOpen::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--color-text);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.iconClosed::before { top: 0; }
+.iconClosed::after { bottom: 0; }
+.iconClosed { }
+.iconClosed::before, .iconClosed::after { transform: none; }
+
+.iconOpen::before { top: 5px; transform: rotate(45deg); }
+.iconOpen::after { top: 5px; transform: rotate(-45deg); }
+
+.mobileMenu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: rgba(3, 3, 5, 0.97);
+  border-bottom: 1px solid var(--color-border);
+  animation: fadeIn var(--duration-base) var(--ease-out) both;
+}
+
+@media (min-width: 900px) {
+  .mobileMenu {
+    display: none;
+  }
+}
+
+.mobileLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+}
+
+/* LordsPot Logo & Powered by MegaPot css :  */
+
+/* --- YOUR EXACT ORIGINAL LOGO CSS --- */
+.logo {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: var(--color-text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* LORDS - Uses your var(--color-text) to create a seamless sweep without changing the base color */
+.logoBase {
+  background: linear-gradient(
+    110deg,
+    var(--color-text) 30%,
+    #ffffff 50%, 
+    var(--color-text) 70%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmerLords 5s infinite linear;
+}
+
+/* YOUR EXACT ORIGINAL ACCENT CSS - Plus the pop animation properties */
+.logoAccent {
+  background: var(--gradient-gold);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  
+  /* Animation additions */
+  display: inline-block; /* Required to allow the pop/rotate */
+  transform-origin: bottom left; 
+  animation: shimmerPot 5s infinite linear; 
+}
+
+/* --- THE KEYFRAMES --- */
+
+/* 1. Sweep across LORDS */
+@keyframes shimmerLords {
+  0%, 65% { 
+    background-position: 200% center; 
+  }
+  82%, 100% { 
+    background-position: -100% center; 
+  }
+}
+
+/* 2. Pop and glow POT (Uses 'brightness' so it doesn't break your gradient) */
+@keyframes shimmerPot {
+  0%, 74% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 0 rgba(212, 175, 55, 0)) brightness(1);
+  }
+  
+  82% { 
+    transform: scale(1.12) rotate(4deg) translateY(-1px);
+    filter: drop-shadow(0 4px 12px rgba(212, 175, 55, 0.8)) brightness(1.3); /* Brightness gives it a flash */
+  }
+
+  90%, 100% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 0 rgba(212, 175, 55, 0)) brightness(1);
+  }
+}
+
+/* --- THE SLEEK 'POWERED BY' BADGE --- */
+.logoWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px; 
+}
+
+/* Ensure the main logo doesn't get link underlines */
+.logoLink {
+  text-decoration: none;
+}
+
+/* Updated badge for standalone external link */
+.poweredByBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.6; 
+  transition: opacity 0.2s ease;
+  text-decoration: none; /* Stops the browser from underlining the link */
+  cursor: pointer;
+}
+
+/* Lights up when the user directly hovers over the badge */
+.poweredByBadge:hover {
+  opacity: 1; 
+}
+
+.poweredByText {
+  font-size: 9px;
+  font-weight: 500;
+  color: #a3a3a3; 
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.poweredByLogo {
+  height: 10px; 
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+/* --- RESPONSIVE MOBILE TWEAKS --- */
+@media (max-width: 768px) {
+  .logoWrapper {
+    gap: 0px; 
+  }
+  
+  .poweredByText {
+    font-size: 8px; 
+  }
+  
+  .poweredByLogo {
+    height: 8px; 
+  }
+}

@@ -168,6 +168,64 @@ class BaseService {
     });
   }
 
+  // ================= Harvest (claim winnings from Megapot into the vault) =================
+
+  /**
+   * Free pre-flight for a harvest batch. Reverts if ANY id in the batch is
+   * unclaimable (already burned / wrong drawing / not vault-owned) — Megapot's
+   * loop is all-or-nothing. The harvest worker uses this to bisect out bad ids
+   * before spending real gas.
+   */
+  public async estimateClaimGas(nftIds: bigint[]): Promise<bigint> {
+    return BigInt(await this.vault.claimWinnings.estimateGas(nftIds));
+  }
+
+  /**
+   * Broadcasts vault.claimWinnings(nftIds) on the shared nonce lane and
+   * returns as soon as it hits the mempool — the harvest worker owns receipt
+   * polling (one in-flight batch at a time, so no confirmer split needed).
+   */
+  public async submitClaimWinnings(nftIds: bigint[]): Promise<{ txHash: string; nonce: number }> {
+
+    const estimated: bigint = await this.vault.claimWinnings.estimateGas(nftIds);
+    const gasLimit = (estimated * 12n) / 10n; // 20% headroom
+
+    return this.withNonceLane(async () => {
+      
+      if (this.nextNonce === null) {
+        this.nextNonce = await this.provider.getTransactionCount(this.wallet.address, 'pending');
+      }
+
+      const nonce = this.nextNonce;
+
+      try {
+        const tx = await this.vault.claimWinnings(nftIds, { gasLimit, nonce });
+        this.nextNonce = nonce + 1;
+        console.log(`[SERVICE:base] Harvest broadcast: ${nftIds.length} ticket(s), nonce=${nonce}, tx=${tx.hash}`);
+        return { txHash: tx.hash as string, nonce };
+      } catch (err) {
+        this.resetNonceLane();
+        throw err;
+      }
+
+    });
+    
+  }
+
+  /** Total USDC pulled into the vault, from OUR WinningsHarvested event. Null if absent. */
+  public parseHarvestedFromReceipt(receipt: ethers.TransactionReceipt): bigint | null {
+    const iface = new ethers.Interface(LordsPotBaseVault.abi);
+    for (const log of receipt.logs) {
+      try {
+        const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+        if (parsed?.name === 'WinningsHarvested') {
+          return BigInt((parsed.args.amountHarvested ?? parsed.args[1]).toString());
+        }
+      } catch { /* other contracts' logs (Megapot, USDC) — skip */ }
+    }
+    return null;
+  }
+
   // ================= Revert classification =================
 
   public classifyError(err: any): RevertClass {

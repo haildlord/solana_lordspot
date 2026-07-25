@@ -19,8 +19,8 @@ import { onShutdown } from '../lib/shutdown';
  * this loop (inline + standalone worker) stay idempotent.
  */
 
-const POLL_MS = 5_000;
-const PENDING_TIMEOUT_MS = 2 * 60_000;
+const POLL_MS = 5_000;                 // 5 secs
+const PENDING_TIMEOUT_MS = 2 * 60_000; // 2 minutes
 const BATCH_SIZE = 50;
 
 interface OrderForFinalize {
@@ -59,7 +59,10 @@ export async function finalizeOrderSuccess(
       },
     });
     
-    if (res.count === 0) return;
+    if (res.count === 0) {
+      console.log(`[finalizer] Order ${order.hash.slice(0,10)} already finalized by another process`);
+      return;
+    }
 
     for (let i = 0; i < order.tickets.length; i++) {
       if (ticketIds[i] !== undefined) {
@@ -112,11 +115,17 @@ async function bounceToRetry(order: SubmittedOrder, reason: string): Promise<voi
 
 /** Re-simulate a mined-but-reverted tx at latest state to extract the revert reason. */
 async function classifyMinedRevert(txHash: string): Promise<RevertClass> {
+
   const provider = baseService.getProvider();
-  const tx = await provider.getTransaction(txHash);
+  const tx = await provider.getTransaction(txHash);    // * eth_getTransactionByHash
+
+  // since the flow reached here only if receipt is 0, it means the tx did exist in the blockchain but reverted.
+  // so !tx, would indicate : You got the receipt from one backend node, but getTransaction hit a different node that hasn't caught up yet.
+  // so !tx.to, would indicate : the tx did exist but This transaction is a Contract Creation (Deployment) transaction.
   if (!tx || !tx.to) {
     return { kind: 'transient', reason: 'Reverted tx unavailable for re-simulation' };
   }
+
   try {
     // If the order was meanwhile fulfilled by another tx, this correctly
     // comes back as OrderAlreadyProcessed → recovery path, not a retry loop.
@@ -127,7 +136,9 @@ async function classifyMinedRevert(txHash: string): Promise<RevertClass> {
   }
 }
 
+// -> here `SubmittedOrder` is a subset of RelayOrder[], but we are passing order as RelayOrder from `runConfirmerTick()` -- type Mismatch
 async function confirmOne(order: SubmittedOrder): Promise<void> {
+
   const provider = baseService.getProvider();
   const ageMs = Date.now() - order.updatedAt.getTime();
 
@@ -135,18 +146,19 @@ async function confirmOne(order: SubmittedOrder): Promise<void> {
     // Crash landed between broadcast and the DB write (or legacy row).
     // The retry is safe: estimateGas reverts OrderAlreadyProcessed if the lost
     // tx actually made it, and the recovery path finds the original receipt.
-    if (ageMs > PENDING_TIMEOUT_MS) {
+    if (ageMs > PENDING_TIMEOUT_MS) { // 2 mins
       await bounceToRetry(order, 'BASE_SUBMITTED without txHash — resetting for safe retry');
     }
     return;
   }
 
-  const receipt = await provider.getTransactionReceipt(order.baseTxHash);
-
+  const receipt = await provider.getTransactionReceipt(order.baseTxHash);  // * eth_getTransactionReceipt
+  // !receipt : Still waiting in the mempool (normal case) || Was dropped / replaced from Mempool (bad case)
   if (!receipt) {
     if (ageMs < PENDING_TIMEOUT_MS) return; // still propagating/mining — normal
 
-    const stillInMempool = await provider.getTransaction(order.baseTxHash);
+    const stillInMempool = await provider.getTransaction(order.baseTxHash); // * eth_getTransactionByHash
+    
     if (stillInMempool) {
       // Alive but slow — likely underpriced. Fee-bumping (same-nonce replacement
       // at +15% fee) is the designed follow-up; do not double-submit here.
@@ -163,7 +175,7 @@ async function confirmOne(order: SubmittedOrder): Promise<void> {
 
   if (receipt.status === 1) {
     const ticketIds = baseService.parseTicketIdsFromReceipt(receipt);
-    await finalizeOrderSuccess(order, receipt.hash, ticketIds);
+    await finalizeOrderSuccess(order, receipt.hash, ticketIds); // -> here order is expected of type : OrderForFinalize, but is actually of type : SubmittedOrder
     console.log(`[confirmer] ✅ Order ${order.hash.slice(0, 10)}… confirmed in block ${receipt.blockNumber} — ${ticketIds.length} Megapot ticket ID(s)`);
     return;
   }
@@ -211,6 +223,7 @@ async function confirmOne(order: SubmittedOrder): Promise<void> {
 }
 
 export async function runConfirmerTick(): Promise<void> {
+
   const orders = await prisma.relayOrder.findMany({
     where: { status: 'BASE_SUBMITTED' },
     include: { tickets: true },
@@ -225,25 +238,32 @@ export async function runConfirmerTick(): Promise<void> {
       console.error(`[confirmer] Error confirming order ${order.hash}:`, err);
     }
   }
+
 }
 
-let intervalHandle: NodeJS.Timeout | null = null;
+let intervalId : NodeJS.Timeout | null = null;
 let tickInFlight = false;
 
 export function startBaseConfirmer(): void {
-  if (intervalHandle) return; // singleton per process
+  
+  if (intervalId) return; // singleton per process
 
-  intervalHandle = setInterval(() => {
-    if (tickInFlight) return;
+  // `intervalId` is assigned immediately when `setInterval()` is called — before the first tick even runs.
+  intervalId = setInterval(() => {                                      // This line runs RIGHT NOW
+    
+    if (tickInFlight) return;   // This is a good guard so that even if one tick takes longer than 5s, the next one doesn't start
+
     tickInFlight = true;
-    runConfirmerTick()
+    
+    runConfirmerTick()                                                  // This runs LATER (after every 5 secs)
       .catch((err) => console.error('[confirmer] Tick failed:', err))
       .finally(() => { tickInFlight = false; });
-  }, POLL_MS);
+    }, POLL_MS);
 
   onShutdown('base-confirmer', () => {
-    if (intervalHandle) clearInterval(intervalHandle);
+    if (intervalId) clearInterval(intervalId);
   });
 
   console.log(`[confirmer] Base receipt confirmer online (every ${POLL_MS / 1000}s)`);
+
 }

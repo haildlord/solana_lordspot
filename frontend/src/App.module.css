@@ -1,0 +1,49 @@
+.shell {
+  position: relative;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+.ambientOrbTop,
+.ambientOrbBottom {
+  position: fixed;
+  pointer-events: none;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(100px);
+}
+
+.ambientOrbTop {
+  top: -15%;
+  right: -10%;
+  width: 55vw;
+  height: 55vw;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.22), transparent 65%);
+  animation: driftA 18s ease-in-out infinite alternate;
+}
+
+.ambientOrbBottom {
+  bottom: -20%;
+  left: -10%;
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.18), transparent 65%);
+  animation: driftB 22s ease-in-out infinite alternate;
+}
+
+@keyframes driftA {
+  from { transform: translate(0, 0); }
+  to { transform: translate(-4%, 5%); }
+}
+
+@keyframes driftB {
+  from { transform: translate(0, 0); }
+  to { transform: translate(5%, -4%); }
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+}

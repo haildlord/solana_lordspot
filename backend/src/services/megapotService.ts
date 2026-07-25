@@ -1,14 +1,35 @@
+import { ethers } from 'ethers';
 import {
   MegapotRoundResponse,
   MegapotRoundsListResponse,
   RoundState,
   TokenAmount,
+  DuneMetricsRow,
+  DuneQueryResultsResponse,
+  FormattedPrizeTier
 } from '../types';
 import { config } from '../lib/config';
 import { prisma } from '../lib/db';
 import { redisConnection } from '../lib/redis';
 import { solanaService } from './solanaService';
+import { baseService } from './baseService';
 import { Prisma } from '../../generated/prisma/client';
+
+// Minimal read-only fragment — we don't have Megapot's full ABI checked in
+// (only our own vault's, in base_abi/), and this is the only function of
+// theirs we ever call.
+const MEGAPOT_JACKPOT_MIN_ABI = [
+  'function getDrawingTierPayouts(uint256 drawingId) view returns (uint256[12] memory)',
+];
+
+// Index 11 = tier 11 = 5 normal matches + bonus match (tierId = 2*normal+bonus)
+// — the same jackpot tier used everywhere else this session (settlementWorker,
+// Results page). Matches Megapot's own 12-element payout array ordering.
+const JACKPOT_TIER_INDEX = 11;
+
+// Same 10% referral win-share as settlementWorker.ts — floor the SHARE, then
+// subtract, never floor(gross * 0.9) directly (can differ by 1 unit).
+const REFERRAL_WIN_SHARE_BPS = 1_000n;
 
 class MegapotService {
   private tryAfterSec = 1;
@@ -22,6 +43,86 @@ class MegapotService {
 
   private toBigInt(amount: TokenAmount): bigint {
     return BigInt(amount.amount);
+  }
+
+  /**
+   * The displayed prize pool is read directly from Megapot's Jackpot contract
+   * on Base (getDrawingTierPayouts), not from the REST API's `prize_pool`
+   * field — chain is truth, same principle used everywhere else in this
+   * backend. Returns the jackpot tier (index 11) net of the 10% referral
+   * win-share, floored to a whole dollar (still 6-decimal-scaled so it drops
+   * straight into the existing prizePoolAmount/formatUsdc pipeline unchanged).
+   *
+   * Reuses baseService's own provider rather than opening a second Base RPC
+   * connection — this is a read-only call, never a transaction, so there's
+   * no nonce-lane or wallet involvement.
+   */
+  private async fetchOnChainJackpotUsdc(epochId: number): Promise<bigint> {
+
+    const jackpot = new ethers.Contract(
+      config.base.megapotJackpotAddress,
+      MEGAPOT_JACKPOT_MIN_ABI,
+      baseService.getProvider()
+    );
+
+    const payouts: bigint[] = await jackpot.getDrawingTierPayouts(BigInt(epochId));
+
+    const gross = BigInt(payouts[JACKPOT_TIER_INDEX] ?? 0n);
+
+    const share = (gross * REFERRAL_WIN_SHARE_BPS) / 10_000n;
+    const net = gross - share;
+
+    // "0 decimals": floor to a whole dollar, expressed back in 6-decimal
+    // units (…000000) so every existing consumer (formatUsdc, the frontend's
+    // usdcToNumber) keeps working without any changes on their end.
+    return (net / 1_000_000n) * 1_000_000n;
+  }
+
+  private async fetchDuneMetrics(): Promise<DuneMetricsRow | null> {
+    const duneUrl = config.duneUrl;
+    const duneApiKey = config.duneApiKey;
+
+    if (!duneUrl || !duneApiKey) {
+      console.warn('[SERVICE:dune] Dune URL or API key missing in config. Skipping fetch.');
+      return null;
+    }
+
+    // Abort request if Dune takes longer than 5 seconds
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(duneUrl, {
+        method: 'GET',
+        headers: {
+          'X-DUNE-API-KEY': duneApiKey,
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP status ${response.status} - ${response.statusText}`);
+      }
+
+      const data = (await response.json()) as DuneQueryResultsResponse;
+      const rows = data.result?.rows;
+
+      if (!rows || rows.length !== 1) {
+        throw new Error(`Expected exactly 1 result row from Dune, got ${rows?.length ?? 0}`);
+      }
+
+      return rows[0];
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.error('[SERVICE:dune] Dune API request timed out after 5s.');
+      } else {
+        console.error(`[SERVICE:dune] Failed to fetch metrics: ${err.message}`);
+      }
+      return null;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /** STRICT VALIDATION: Ensures active round data is flawless before caching */
@@ -120,29 +221,60 @@ class MegapotService {
   }
 
   private async syncProtocolState(data: MegapotRoundResponse, isPaused: boolean) {
-
     const currentEpochId = parseInt(String(data.id), 10);
     console.log(`[DATABASE] Syncing ProtocolState singleton for Epoch ID: ${currentEpochId} (Paused: ${isPaused})`);
+
+    // Fetch existing DB state upfront to use as rock-solid fallback values
+    const existingState = await prisma.protocolState.findUnique({ where: { id: 'singleton' } });
+
+    // 1. Fetch On-Chain Jackpot USDC (with fallback)
+    let prizePoolAmount: bigint;
+    try {
+      prizePoolAmount = await this.fetchOnChainJackpotUsdc(currentEpochId);
+    } catch (err) {
+      console.error(`[ALERT][SERVICE:megapot] On-chain jackpot read failed for Epoch ${currentEpochId} — retaining fallback.`, err);
+      prizePoolAmount = existingState?.prizePoolAmount ?? this.toBigInt(data.prize_pool);
+    }
+
+    // 2. Fetch Dune Analytics Data (with fallback)
+    let jackpotsWon: number = existingState?.jackpotsWon ?? 0;
+    let prizesWon: bigint = existingState?.prizesWon ?? BigInt(0);
+
+    const duneRow = await this.fetchDuneMetrics();
+
+    if (duneRow) {
+      // Safely parse Dune string literals to native numbers and BigInts
+      if (duneRow.jackpots_won !== undefined && duneRow.jackpots_won !== null) {
+        jackpotsWon = Number(duneRow.jackpots_won);
+      }
+      if (duneRow.prizes_won !== undefined && duneRow.prizes_won !== null) {
+        prizesWon = BigInt(duneRow.prizes_won);
+      }
+
+      console.log(`[SERVICE:dune] Successfully synced metrics: Jackpots Won = ${jackpotsWon}, Prizes Won = ${prizesWon.toString()}`);
+    } else {
+      console.warn(`[SERVICE:dune] Retaining previous singleton stats: Jackpots Won = ${jackpotsWon}, Prizes Won = ${prizesWon.toString()}`);
+    }
+
+    // 3. Atomic Database Upsert
+    const updatePayload = {
+      isPaused,
+      currentEpochId,
+      endedAt: new Date(data.ended_at),
+      maxNormalBall: data.ball_pool.normals_max,
+      maxBonusBall: data.ball_pool.bonusball_max,
+      prizePoolAmount,
+      prizesWon,
+      jackpotsWon,
+    };
 
     await prisma.protocolState.upsert({
       where: { id: 'singleton' },
       create: {
         id: 'singleton',
-        isPaused,
-        currentEpochId,
-        endedAt: new Date(data.ended_at),
-        maxNormalBall: data.ball_pool.normals_max,
-        maxBonusBall: data.ball_pool.bonusball_max,
-        prizePoolAmount: this.toBigInt(data.prize_pool),
+        ...updatePayload,
       },
-      update: {
-        isPaused,
-        currentEpochId,
-        endedAt: new Date(data.ended_at),
-        maxNormalBall: data.ball_pool.normals_max,
-        maxBonusBall: data.ball_pool.bonusball_max,
-        prizePoolAmount: this.toBigInt(data.prize_pool),
-      },
+      update: updatePayload,
     });
   }
 
@@ -150,9 +282,7 @@ class MegapotService {
 
     console.log(`[SERVICE:megapot] Parsing and validating active round payload...`);
 
-    console.log("-->> BEFORE :", data);
     const parsedRound: RoundState = this.parseRoundState(data);
-    console.log("-->> AFTER :", parsedRound);
 
     const isPaused = (await redisConnection.get(this.PAUSE_KEY)) === 'true';
 
@@ -162,8 +292,57 @@ class MegapotService {
     await this.syncProtocolState(data, isPaused);
   }
 
-  private async upsertSettledEpoch(data: MegapotRoundResponse): Promise<void> {
+  /**
+   * Processes the raw tiers to:
+   * 1. Remove Tier 0 (0 normals, false bonus)
+   * 2. Apply a strict 10% reduction to all payout amounts (using native BigInt math to prevent precision loss)
+   * 3. Calculate the total sum paid out across all valid tiers
+   * 4. Extract the exact Jackpot value (Tier 11)
+   */
+  private processPrizeTiers(tiers: MegapotRoundResponse['prize_tiers']): {
+    totalPaidAmount: bigint;
+    jackpot: bigint;
+    formattedPrizeTiers: FormattedPrizeTier[];
+  } {
+    let totalPaidAmount = 0n;
+    let jackpot = 0n;
+    const formattedPrizeTiers: FormattedPrizeTier[] = [];
 
+    if (!tiers) {
+      return { totalPaidAmount, jackpot, formattedPrizeTiers };
+    }
+
+    for (const tier of tiers) {
+      // 1. Skip Tier 0 (No normals, no bonus)
+      if (tier.tier_id === 0) continue;
+
+      // 2. Apply 10% reduction. 
+      // We multiply by 90 and divide by 100 using native BigInt.
+      // This naturally truncates decimals without using Math.floor/ceil, keeping exact precision for USDC.
+      const rawAmount = BigInt(tier.payout.amount);
+      const reducedAmount = (rawAmount * 90n) / 100n;
+
+      // 3. Add to total sum (Amount * Ticket Count)
+      const tierTotal = rawAmount * BigInt(tier.ticket_count);
+      totalPaidAmount += tierTotal;
+
+      // 4. Capture the jackpot if it's tier 11
+      if (tier.tier_id === 11) {
+        jackpot = reducedAmount;
+      }
+
+      // 5. Push formatted clean data for the JSON column
+      formattedPrizeTiers.push({
+        tierId: tier.tier_id,
+        amount: reducedAmount.toString(), // Convert to string for safe JSON storage
+        ticketCount: tier.ticket_count,
+      });
+    }
+
+    return { totalPaidAmount, jackpot, formattedPrizeTiers };
+  }
+
+  private async upsertSettledEpoch(data: MegapotRoundResponse): Promise<void> {
     if (data.status !== 'settled') return;
     if (!data.top_prize_amount || !data.winning_numbers || !data.prize_tiers) {
       console.warn(`[SERVICE:megapot] Epoch ${data.id} settled but missing drawing data — skipping DB upsert`);
@@ -173,31 +352,47 @@ class MegapotService {
     const megapotId = parseInt(String(data.id), 10);
     console.log(`[DATABASE] Upserting settled Epoch ${megapotId} into MegapotEpoch table...`);
 
+    const normalMax = data.ball_pool?.normals_max ?? null;
+    const bonusMax = data.ball_pool?.bonusball_max ?? null;
+    const drawnAt = data.settled_at ? new Date(data.settled_at) : null;
+
+    // Process tiers: calculate totals and format the exact JSON we want to store
+    const { totalPaidAmount, jackpot, formattedPrizeTiers } = this.processPrizeTiers(data.prize_tiers);
+
+    // Also apply the 10% reduction to topPrizeAmount so it matches the jackpot logic
+    const rawTopPrize = this.toBigInt(data.top_prize_amount);
+    const topPrizeAmount = (rawTopPrize * 90n) / 100n;
+
+    const upsertPayload = {
+      lordsPotTicketCount: 20,
+      totalTicketCount: data.ticket_count,
+      
+      lordsPotWinnersCount: 20,
+      totalWinnersCount: data.winners_count,
+
+      totalPaidAmount,
+      lordsPotPaidAmount: BigInt(20e6),
+
+      jackpot,
+      prizeTiers: formattedPrizeTiers as unknown as Prisma.InputJsonValue,
+
+      topPrizeAmount,
+      topPrizeWinnersCount: data.top_prize_winners_count,
+      winningNormals: data.winning_numbers.normals,
+      winningBonusBall: data.winning_numbers.bonusball,
+
+      normalMax,
+      bonusMax,
+      drawnAt,
+    };
+
     await prisma.megapotEpoch.upsert({
       where: { megapotId },
       create: {
         megapotId,
-        ticketCount: data.ticket_count,
-        uniqueParticipants: data.unique_participants,
-        winnersCount: data.winners_count,
-        topPrizeAmount: this.toBigInt(data.top_prize_amount),
-        topPrizeWinnersCount: data.top_prize_winners_count,
-        lpEarningsAmount: this.toBigInt(data.lp_earnings),
-        winningNormals: data.winning_numbers.normals,
-        winningBonusBall: data.winning_numbers.bonusball,
-        prizeTiers: data.prize_tiers as unknown as Prisma.InputJsonValue,
+        ...upsertPayload,
       },
-      update: {
-        ticketCount: data.ticket_count,
-        uniqueParticipants: data.unique_participants,
-        winnersCount: data.winners_count,
-        topPrizeAmount: this.toBigInt(data.top_prize_amount),
-        topPrizeWinnersCount: data.top_prize_winners_count,
-        lpEarningsAmount: this.toBigInt(data.lp_earnings),
-        winningNormals: data.winning_numbers.normals,
-        winningBonusBall: data.winning_numbers.bonusball,
-        prizeTiers: data.prize_tiers as unknown as Prisma.InputJsonValue,
-      },
+      update: upsertPayload,
     });
   }
 

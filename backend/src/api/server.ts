@@ -1,9 +1,12 @@
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 
 import { config } from '../lib/config';
 import { onShutdown } from '../lib/shutdown';
 import webhookRouter from '../routes/webhook';
+import claimsRouter from '../routes/claims';
+import protocolRouter from '../routes/protocol';
 // import ordersRouter from '../routes/orders';
 // import stateRouter from '../routes/state';
 // import quoteRouter from '../routes/quote';
@@ -13,9 +16,11 @@ import { megapotService } from '../services/megapotService';
 
 const app = express();
 
-// NOTE: no cors() — the only live route is a server-to-server webhook, which
-// browsers never call. When the frontend routes go live, re-add cors locked to
-// the frontend origin: app.use(cors({ origin: 'https://<frontend-domain>' }))
+// Frontend routes are now live (browser-called), unlike the webhook. Locked to
+// an explicit origin allowlist — FRONTEND_ORIGIN unset falls back to the local
+// Vite dev server only, never to a wildcard.
+const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173').split(',');
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req, res) => {
@@ -23,6 +28,8 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/webhooks', webhookRouter);
+app.use('/v1/claims', claimsRouter);
+app.use('/v1/protocol', protocolRouter);
 // app.use('/v1/orders', ordersRouter);
 // app.use('/v1/state', stateRouter);
 // app.use('/v1/quote', quoteRouter);

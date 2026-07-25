@@ -1,0 +1,75 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: var(--space-4);
+  animation: fadeIn var(--duration-fast) var(--ease-out) both;
+}
+
+.card {
+  width: 260px;
+  height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  text-align: center;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, var(--color-surface-raised), var(--color-surface));
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  box-shadow: var(--shadow-gold-glow);
+}
+
+.loadingText {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--color-gold-500);
+}
+
+.resultWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  animation: scaleIn var(--duration-base) var(--ease-out) both;
+}
+
+.iconCircle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+}
+
+.iconSuccess {
+  background: var(--color-success-bg);
+  border-color: rgba(52, 211, 153, 0.35);
+  color: var(--color-success);
+}
+
+.iconError {
+  background: var(--color-danger-bg);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: var(--color-danger);
+}
+
+.resultText {
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.successText { color: var(--color-success); }
+.errorText { color: var(--color-danger); }
