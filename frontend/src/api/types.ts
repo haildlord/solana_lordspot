@@ -60,6 +60,21 @@ export interface EpochWinner {
 export interface EpochWinnersResponse {
   megapotId: number;
   winners: EpochWinner[];
+  nextOffset: number | null;
+}
+
+export interface EpochWinnerTicket {
+  normalBalls: number[];
+  bonusBall: number;
+  winStatus: WinStatus;
+  winAmountUsdc: string;
+  isFreeTicketTier: boolean;
+}
+
+export interface EpochWinnerDetailResponse {
+  megapotId: number;
+  buyer: string;
+  tickets: EpochWinnerTicket[];
 }
 
 export type WinStatus =
@@ -91,6 +106,12 @@ export interface UserTicket {
   fulfillEpoch: number | null;
   orderStatus: OrderStatus;
   purchasedAt: string;
+  orderHash: string;
+  txSignature: string;
+  /** Null until the drawing this ticket fulfills into has settled. */
+  epochSettledAt: string | null;
+  epochWinningNormals: number[] | null;
+  epochWinningBonusBall: number | null;
 }
 
 export interface UserTicketsResponse {

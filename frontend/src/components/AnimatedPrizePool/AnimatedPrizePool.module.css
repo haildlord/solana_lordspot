@@ -30,40 +30,87 @@
   color: var(--color-gold-500);
 }
 
-.value {
+/* 1. THE CONTAINER */
+/* Uses CSS Grid to force the two spans to sit exactly on top of each other perfectly */
+.valueContainer {
   position: relative;
+  display: grid;
+  place-items: center; 
   z-index: 1;
+}
+
+/* 2. SHARED TEXT STYLES */
+/* Both spans need the exact same font size and spacing so they align perfectly */
+.valueShadow,
+.valueGradient {
+  grid-area: 1 / 1; /* This is the magic rule that stacks them without absolute positioning */
   font-size: clamp(56px, 13vw, 108px);
   font-weight: 900;
   letter-spacing: -0.04em;
   line-height: 1;
   text-align: center;
-  background: var(--gradient-gold);
+  margin: 0;
+}
+
+/* --- BOTTOM LAYER: THICKER BULLION SHADOWS --- */
+.valueShadow {
+  color: transparent; 
+  text-shadow: 
+    /* 1. Ultra-Crisp Bright Rim Light (Catches the overhead light) */
+    -1px 1px 0 #fff1b8,
+    -2px 2px 0 #fada7a,
+    
+    /* 2. Polished Gold Body */
+    -3px 3px 0 #d4af37,
+    -4px 4px 0 #c29d2b,
+    -5px 5px 0 #ad8a1e,
+    -6px 6px 0 #997813,
+    
+    /* 3. Smooth Transition to Deep Onyx Base */
+    -7px 7px 0 #735907,
+    -8px 8px 0 #4f3b00,
+    -9px 9px 0 #332600,
+    -10px 10px 0 #1c1500,
+    -11px 11px 0 #0d0a00,
+    -12px 12px 0 #050400,
+    -13px 13px 0 #000000,
+    -14px 14px 0 #000000, /* Extra thick black anchor */
+    
+    /* 4. The VIP Atmospheric Glow (Radiates expensive warmth) */
+    -15px 15px 25px rgba(212, 175, 55, 0.5), /* Gold inner halo */
+    -25px 25px 50px rgba(0, 0, 0, 0.9),     /* Deep drop shadow */
+    0 0 80px rgba(212, 175, 55, 0.25);       /* Massive base radial glow */
+}
+
+/* --- TOP LAYER: SOLID SMOOTH GOLD + MOVING SHINE --- */
+.valueGradient {
+  /* Layer 1 (Top): The Moving Shine (Transparent -> White -> Transparent) */
+  background-image: linear-gradient(-75deg, transparent 46%, rgba(255, 255, 255, 0.9) 50%, transparent 54%);
+  
+  /* Layer 2 (Bottom): The Solid, Smooth Gold Base */
+  background-color: #e5b937;
+  
+  /* Size the moving shine layer so it can travel */
+  background-size: 200% auto;
+  background-repeat: no-repeat;
+  
+  animation: eliteShine 8s linear infinite;
+  
+  /* Standard text clipping */
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 6px 30px rgba(212, 175, 55, 0.35));
+  -webkit-text-fill-color: transparent;
 }
 
-.sign {
-  background: linear-gradient(180deg, #f5f5f5, #a8a8a8);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.sparkles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.spark {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--color-gold-300);
-  box-shadow: 0 0 8px var(--color-gold-300);
+/* Ensure this is the ONLY eliteShine keyframe in your file */
+@keyframes eliteShine {
+  0% {
+    /* Move Layer 1 (Shine) to 200%, Keep Layer 2 (Base) static at 0% */
+    background-position: 200% center, 0% 0%;
+  }
+  100% {
+    /* Move Layer 1 (Shine) to -200%, Keep Layer 2 (Base) static at 0% */
+    background-position: -200% center, 0% 0%;
+  }
 }

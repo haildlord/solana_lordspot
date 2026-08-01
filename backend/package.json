@@ -25,6 +25,7 @@
     "@coral-xyz/anchor": "^0.32.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.4",
     "bs58": "^6.0.0",
     "bullmq": "^5.78.1",

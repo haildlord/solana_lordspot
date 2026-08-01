@@ -165,7 +165,7 @@ pub mod solana_smart_contracts {
             authority: ctx.accounts.vault_authority.to_account_info(),
         };
         let cpi_context = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
+            ctx.accounts.token_program.key(),
             cpi_accounts,
             signer_seeds,
         );
@@ -206,7 +206,7 @@ pub mod solana_smart_contracts {
             authority: ctx.accounts.vault_authority.to_account_info(),
         };
         let cpi_context = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
+            ctx.accounts.token_program.key(),
             cpi_accounts,
             signer_seeds,
         );

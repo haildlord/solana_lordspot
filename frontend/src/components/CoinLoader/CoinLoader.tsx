@@ -59,7 +59,7 @@ export function CoinLoader({ size = 'md', label }: CoinLoaderProps) {
     // 7. Texture & Material Loading
     const loader = new THREE.TextureLoader();
     
-    loader.load('/512_tinified.png', (texture) => {
+    loader.load('/lord_loader.png', (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       
       // THE PERFECT BALANCE: Stop the crawling lines but keep it HD

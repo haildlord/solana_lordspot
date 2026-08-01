@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { getProtocolState, getAllTimeStats, getEpochs, getEpochWinners, getUserTickets } from './protocol';
+import { getProtocolState, getAllTimeStats, getEpochs, getEpochWinners, getEpochWinnerDetail, getUserTickets } from './protocol';
 import { getClaimSummary, postClaimVoucher } from './claims';
 
 /** Live Megapot-mirrored state (prize pool, next draw, pause flag). Polled — this is the number users watch tick up. */
@@ -20,18 +20,33 @@ export function useAllTimeStats() {
   });
 }
 
-export function useEpochs(cursor?: number) {
-  return useQuery({
-    queryKey: ['epochs', cursor ?? null],
-    queryFn: () => getEpochs(cursor),
+/** Settled epoch history for Results, paged backwards from the newest epoch via `nextCursor`. */
+export function useEpochs() {
+  return useInfiniteQuery({
+    queryKey: ['epochs'],
+    queryFn: ({ pageParam }) => getEpochs(pageParam),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }
 
+/** Winners for one settled epoch, paged via `nextOffset`. */
 export function useEpochWinners(megapotId: number | null) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ['epoch-winners', megapotId],
-    queryFn: () => getEpochWinners(megapotId as number),
+    queryFn: ({ pageParam }) => getEpochWinners(megapotId as number, pageParam),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextOffset ?? undefined,
     enabled: megapotId !== null,
+  });
+}
+
+/** One winner's individual tickets for one epoch — powers the winner-detail modal. */
+export function useEpochWinnerDetail(megapotId: number | null, buyer: string | null) {
+  return useQuery({
+    queryKey: ['epoch-winner-detail', megapotId, buyer],
+    queryFn: () => getEpochWinnerDetail(megapotId as number, buyer as string),
+    enabled: megapotId !== null && buyer !== null,
   });
 }
 

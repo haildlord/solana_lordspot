@@ -35,17 +35,17 @@ export const config = {
   base: {
     // BASE_RPC_URL in production; ANVIL_RPC_URL kept as an alias for local anvil setups
     rpcUrl: requiredOneOf(['BASE_RPC_URL', 'ANVIL_RPC_URL']),
-    chainId: parseInt(process.env.BASE_CHAIN_ID ?? '8453', 10),
+    chainId: parseInt(process.env.BASE_CHAIN_ID!, 10),
     vaultAddress: required('LORDSPOT_BASE_VAULT'),
     relayerKey: required('RELAYER_BASE_SIGNER_PRIVATEKEY'),
     rewardWallet: requiredOneOf([
       'BASE_REWARD_WALLET_ADDRESS',
     ]),
     referralSplit: BigInt('1000000000000000000'),
-    usdcAddress: required(`USDC_BASE_ADDRESS`),
+    usdcAddress: requiredOneOf([`USDC_BASE_ADDRESS`, `USDC_BASE_SEPOLIA_ADDRESS`]),
     // Megapot's own Jackpot contract on Base (not our vault) — read-only
     // calls only (getDrawingTierPayouts), never a tx target.
-    megapotJackpotAddress: required('MEGAPOT_BASE_ADDRESS')
+    megapotJackpotAddress: required('MEGAPOT_BASE_SEPOLIA_ADDRESS')
   },
 
   megapot: {

@@ -14,6 +14,7 @@ import { redisConnection } from '../lib/redis';
 import { solanaService } from './solanaService';
 import { baseService } from './baseService';
 import { Prisma } from '../../generated/prisma/client';
+import { publishEpochSettled } from '../lib/epochEvents';
 
 // Minimal read-only fragment — we don't have Megapot's full ABI checked in
 // (only our own vault's, in base_abi/), and this is the only function of
@@ -198,13 +199,20 @@ class MegapotService {
   }
 
   private async fetchActiveRoundRaw(): Promise<MegapotRoundResponse> {
+    
     console.log(`[SERVICE:megapot] Fetching raw active round data...`);
+
     return (await this.megapotFetch('/rounds/active').then((r) =>
         r.json()
     )) as MegapotRoundResponse;
-  //   return (await fetch('http://localhost:3001/rounds/active').then((r) =>
-  //     r.json()
-  // )) as MegapotRoundResponse;
+
+    //   return (await fetch('http://localhost:3001/rounds/active').then((r) =>
+    //     r.json()
+    // )) as MegapotRoundResponse;
+
+    // return (await fetch('https://megapot-mock-api.onrender.com/rounds/active').then((r) =>
+    //     r.json()
+    // )) as MegapotRoundResponse;
   }
 
   private async fetchRoundById(megapotId: number): Promise<MegapotRoundResponse> {
@@ -215,8 +223,12 @@ class MegapotService {
         r.json()
     )) as MegapotRoundResponse;
 
-  //   return (await fetch(`http://localhost:3001/rounds/${megapotId}`).then((r) =>
-  //     r.json()
+    // return (await fetch(`http://localhost:3001/rounds/${megapotId}`).then((r) =>
+    //   r.json()
+    // )) as MegapotRoundResponse;
+
+  // return (await fetch(`https://megapot-mock-api.onrender.com/rounds/${megapotId}`).then((r) =>
+  //   r.json()
   // )) as MegapotRoundResponse;
   }
 
@@ -230,7 +242,8 @@ class MegapotService {
     // 1. Fetch On-Chain Jackpot USDC (with fallback)
     let prizePoolAmount: bigint;
     try {
-      prizePoolAmount = await this.fetchOnChainJackpotUsdc(currentEpochId);
+      // -> uncomment it : prizePoolAmount = await this.fetchOnChainJackpotUsdc(currentEpochId); 
+      prizePoolAmount = 200_000_000_000n;
     } catch (err) {
       console.error(`[ALERT][SERVICE:megapot] On-chain jackpot read failed for Epoch ${currentEpochId} — retaining fallback.`, err);
       prizePoolAmount = existingState?.prizePoolAmount ?? this.toBigInt(data.prize_pool);
@@ -420,7 +433,11 @@ class MegapotService {
         if (cursor) params.set("cursor", cursor);
 
         const response = await this.megapotFetch(`/rounds?${params.toString()}`);
+
         // const response = await fetch(`http://localhost:3001/rounds?${params.toString()}`);
+
+        // const response = await fetch(`https://megapot-mock-api.onrender.com/rounds?${params.toString()}`);
+
 
         const body = (await response.json()) as MegapotRoundsListResponse;
 
@@ -649,6 +666,12 @@ class MegapotService {
               console.log(`[SERVICE:megapot] Fetching settlement data for concluded Epoch: ${oldData.id}`);
               const settledRound = await this.fetchRoundById(oldData.id);
               await this.upsertSettledEpoch(settledRound);
+
+              // Cross-process nudge (Redis pub/sub) so settlement reacts to
+              // this epoch immediately instead of waiting up to 60s for its
+              // next poll — works regardless of whether settlement/harvest
+              // run in this same process or a separate worker process.
+              publishEpochSettled(oldData.id);
             } catch (err) {
               console.warn(`[SERVICE:megapot] Could not fetch settled epoch ${oldData.id} during transition. Will backfill later.`, err);
             }

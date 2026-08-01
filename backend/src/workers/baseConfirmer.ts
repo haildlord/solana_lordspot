@@ -241,6 +241,8 @@ export async function runConfirmerTick(): Promise<void> {
 
 }
 
+
+
 let intervalId : NodeJS.Timeout | null = null;
 let tickInFlight = false;
 

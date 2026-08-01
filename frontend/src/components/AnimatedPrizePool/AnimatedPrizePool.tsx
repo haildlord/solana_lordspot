@@ -45,28 +45,14 @@ export function AnimatedPrizePool({ value, label = 'UP FOR GRABS' }: AnimatedPri
       <motion.h1
         animate={{ scale: popScale }}
         transition={{ type: 'spring', stiffness: 400, damping: 14 }}
-        className={styles.value}
+        className={styles.valueContainer}
       >
-        <span className={styles.sign}>$</span>
-        {formatted}
+        {/* Layer 1: The 3D Shadows */}
+        <span className={styles.valueShadow}>{`$${formatted}`}</span>
+        
+        {/* Layer 2: Your exact Gold Gradient */}
+        <span className={styles.valueGradient}>{`$${formatted}`}</span>
       </motion.h1>
-
-      <div className={styles.sparkles} aria-hidden="true">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <motion.div
-            key={i}
-            className={styles.spark}
-            initial={{ left: `${30 + (i % 4) * 12}%`, top: '65%', opacity: 0 }}
-            animate={{
-              top: [`65%`, `${15 + Math.sin(i) * 12}%`],
-              left: [`${30 + (i % 4) * 12}%`, `${26 + ((i * 8) % 50)}%`],
-              opacity: [0, 0.9, 0],
-              scale: [0.5, 1.3, 0.5],
-            }}
-            transition={{ duration: 2.3 + (i % 3) * 0.5, repeat: Infinity, delay: i * 0.3, ease: 'easeInOut' }}
-          />
-        ))}
-      </div>
     </div>
   );
 }

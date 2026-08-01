@@ -10,6 +10,7 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 import { Program, AnchorProvider, Wallet, BN } from '@coral-xyz/anchor';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import bs58 from 'bs58';
 
 import solana_idl from '../../solana_idl/solana_smart_contracts.json';
@@ -216,6 +217,11 @@ class SolanaService {
     return this.connection;
   }
 
+  /** Our own admin/relayer wallet — never a buyer, only pause/resume/update_epoch/claim fee-payer. */
+  public getAdminPublicKey(): PublicKey {
+    return this.wallet.publicKey;
+  }
+
   /**
    * Builds a claim VOUCHER: a claim_winnings transaction carrying the exact
    * amount owed, PARTIALLY SIGNED by the admin key. The user counter-signs in
@@ -243,10 +249,14 @@ class SolanaService {
   ): Promise<{ transactionBase64: string; txSignature: string; lastValidBlockHeight: number }> {
     const user = new PublicKey(userWallet);
 
-    // ATAs + PDAs resolve automatically from the IDL's account constraints.
+    // ATAs + PDAs resolve automatically from the IDL's account constraints —
+    // EXCEPT tokenProgram: it's declared as an `Interface` (Token vs
+    // Token-2022) on-chain so Anchor can't infer a single default for it,
+    // unlike a plain `Program<Token>`. Must be passed explicitly or the
+    // whole instruction build throws "Account `tokenProgram` not provided."
     const claimIx: TransactionInstruction = await (this.program.methods as any)
       .claimWinnings(new BN(amount.toString()))
-      .accounts({ user, admin: this.wallet.publicKey })
+      .accounts({ user, admin: this.wallet.publicKey, tokenProgram: TOKEN_PROGRAM_ID })
       .instruction();
 
     const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash();

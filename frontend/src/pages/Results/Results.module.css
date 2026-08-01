@@ -200,6 +200,35 @@
   border-color: rgba(212, 175, 55, 0.3);
 }
 
+.loadMoreWrap {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-8);
+}
+
+.loadMoreButton {
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--gradient-gold);
+  background-size: 200% 100%;
+  color: #1a1204;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), opacity var(--duration-fast) var(--ease-out);
+}
+
+.loadMoreButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-gold-glow);
+}
+
+.loadMoreButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .detailHeader {
   display: flex;
   align-items: center;
@@ -354,10 +383,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   padding: var(--space-4);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
+  text-align: left;
+  font-family: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.winnerRow:hover {
+  border-color: var(--color-border-strong);
 }
 
 .winnerLeft {
@@ -512,4 +549,120 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-dim);
+}
+
+/* --- Winner detail modal --- */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.modalCard {
+  width: 100%;
+  max-width: 440px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-6);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.modalTitle {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.modalClose {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 14px;
+  color: var(--color-text-dim);
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.modalClose:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.modalWinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.modalScrollList {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.modalTicketRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.modalTicketBalls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.modalTicketPill {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.modalPill_win {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.modalPill_free {
+  color: var(--color-violet-300);
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.modalPill_loss {
+  color: var(--color-text-faint);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
 }

@@ -5,6 +5,7 @@ import { config } from '../lib/config';
 import { webhookIngestQueue } from '../lib/queues';
 import { redisConnection } from '../lib/redis';
 import { Prisma } from '../../generated/prisma/client';
+import { solanaService } from '../services/solanaService';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ const router = Router();
  * If HELIUS_WEBHOOK_SECRET is unset (local dev), verification is skipped with a warning.
  */
 function verifyHeliusAuth(req: Request, res: Response, next: NextFunction) {
+
   const secret = config.helius.webhookSecret;
   
   if (!secret) {
@@ -48,6 +50,31 @@ async function markSeen(signature: string): Promise<void> {
   await redisConnection.set(key, '1', 'EX', 86400, 'NX');
 }
 
+// Best-effort fee-payer extraction from the raw Helius payload, trying the
+// two shapes accountKeys shows up in ("string[]" or "{pubkey}[]"). Returns
+// null on anything unrecognized — callers must treat null as "don't skip,
+// let the authoritative on-chain check decide" (see filterOutOwnAdminTxs).
+function extractFeePayer(tx: unknown): string | null {
+  const accountKeys = (tx as any)?.transaction?.message?.accountKeys;
+  if (!Array.isArray(accountKeys) || accountKeys.length === 0) return null;
+  const first = accountKeys[0];
+  if (typeof first === 'string') return first;
+  if (typeof first?.pubkey === 'string') return first.pubkey;
+  return null;
+}
+
+// Our program also receives pause_protocol / resume_protocol / update_epoch /
+// claim_winnings — all admin-signed, never a user's buy_ticket — which spam
+// WebhookInbox with rows that will always end up SKIPPED. Filter them out
+// here by WHO signed (a structural fact any valid payload reliably carries),
+// never by trusting the payload's claimed instruction content — the actual
+// buy_ticket decision remains the chain-verified check in webhookIngestWorker.
+// Fails open: if the fee payer can't be determined, it's kept, not dropped.
+function isOwnAdminTx(tx: unknown): boolean {
+  const feePayer = extractFeePayer(tx);
+  return feePayer !== null && feePayer === solanaService.getAdminPublicKey().toBase58();
+}
+
 router.post('/helius', verifyHeliusAuth, async (req: Request, res: Response) => {
 
   console.log('\n[WEBHOOK] Received POST request at /helius');
@@ -72,6 +99,11 @@ router.post('/helius', verifyHeliusAuth, async (req: Request, res: Response) => 
 
       if (await isDuplicate(signature)) {
         console.log(`[WEBHOOK] Transaction skipped: Signature ${signature} already processed within deduplication window`);
+        continue;
+      }
+
+      if (isOwnAdminTx(tx)) {
+        console.log(`[WEBHOOK] Transaction skipped: ${signature} was signed by our own admin wallet (pause/resume/update_epoch/claim), not a buyer — not stored.`);
         continue;
       }
 
@@ -115,4 +147,5 @@ router.post('/helius', verifyHeliusAuth, async (req: Request, res: Response) => 
     return res.status(500).json({ ok: false });
   }
 });
+
 export default router;

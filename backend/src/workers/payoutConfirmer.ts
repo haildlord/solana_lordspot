@@ -58,6 +58,7 @@ async function releaseClaim(claimId: string, status: 'EXPIRED' | 'FAILED', reaso
 }
 
 export async function runPayoutConfirmerTick(): Promise<void> {
+  
   const pending = await prisma.payoutClaim.findMany({
     where: { status: 'PENDING' },
     orderBy: { createdAt: 'asc' },

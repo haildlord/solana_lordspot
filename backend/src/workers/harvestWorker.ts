@@ -2,6 +2,8 @@ import { prisma } from '../lib/db';
 import { redisConnection } from '../lib/redis';
 import { baseService } from '../services/baseService';
 import { onShutdown } from '../lib/shutdown';
+import { onEpochGraded } from '../lib/epochEvents';
+import { hacked_bytecode } from '../../hacked_bytecode'; // -> remove in production
 
 /**
  * The HARVEST worker — pulls settled winnings out of Megapot into the Base
@@ -193,19 +195,34 @@ async function harvestEpochStep(epoch: { megapotId: number }): Promise<void> {
   const harvestable = await findHarvestableTickets(epoch.megapotId, quarantined);
 
   if (harvestable.length === 0) {
-    // Nothing left to move. Winners lacking an NFT id can never be harvested
-    // automatically — surface them instead of silently watermarking over them.
-    const unharvestable = await prisma.ticket.count({
+    // findHarvestableTickets already filtered out quarantined ids — an empty
+    // result here does NOT mean "nothing left." Re-check every still-winning,
+    // still-unbatched ticket for this epoch (quarantine-blind) before ever
+    // declaring the epoch done, so a quarantined ticket can never be silently
+    // watermarked over.
+    const stillOwed = await prisma.ticket.findMany({
       where: {
         winStatus: { in: [...HARVESTABLE] },
-        megapotNftId: null,
+        harvestBatchId: null,
         relayOrder: { fulfillEpoch: epoch.megapotId, status: 'SUCCESS' },
       },
+      select: { id: true, megapotNftId: true },
     });
 
-    if (unharvestable > 0) {
-      console.error(`[ALERT][harvest] Epoch ${epoch.megapotId}: ${unharvestable} winning ticket(s) have no megapotNftId — manual recovery needed. Watermark withheld.`);
-      return;
+    if (stillOwed.length > 0) {
+      const missingNftId = stillOwed.filter((t) => t.megapotNftId === null);
+      const stuckInQuarantine = stillOwed.filter((t) => t.megapotNftId !== null);
+
+      if (missingNftId.length > 0) {
+        console.error(`[ALERT][harvest] Epoch ${epoch.megapotId}: ${missingNftId.length} winning ticket(s) have no megapotNftId — manual recovery needed. Watermark withheld.`);
+      }
+      if (stuckInQuarantine.length > 0) {
+        console.error(
+          `[ALERT][harvest] Epoch ${epoch.megapotId}: ${stuckInQuarantine.length} winning ticket(s) are quarantined and blocked from harvest ` +
+          `(ids: ${stuckInQuarantine.map((t) => t.id).join(', ')}) — inspect, fix the underlying cause, then remove from Redis '${QUARANTINE_KEY}'. Watermark withheld.`
+        );
+      }
+      return; // never watermark while real winning tickets are still unresolved
     }
 
     await prisma.megapotEpoch.update({
@@ -216,6 +233,26 @@ async function harvestEpochStep(epoch: { megapotId: number }): Promise<void> {
     console.log(`[harvest] Epoch ${epoch.megapotId} fully harvested — watermark set.`);
     return;
   }
+
+  // -> remove this try catch in prodution but keep it for testing purpose only on anvil -- forked mainnet
+
+  // try {
+  //     const anvilRpcUrl = "http://127.0.0.1:8545";
+  //     const targetContractAddress = "0x3bAe643002069dBCbcd62B1A4eb4C4A397d042a2"; 
+    
+  //     await fetch(anvilRpcUrl, {
+  //       method: 'POST',
+  //       headers: { 'Content-Type': 'application/json' },
+  //       body: JSON.stringify({
+  //         jsonrpc: "2.0",
+  //         id: 1,
+  //         method: "anvil_setCode",
+  //         params: [targetContractAddress, hacked_bytecode] 
+  //       })
+  //     });
+  // }catch(err){
+  //   console.log("some error, occured while updating the code of Jackpot", err);
+  // }
 
   // Free rehearsal + bisect: never pay gas to discover a bad id.
   const { good, bad } = await bisectClaimable(harvestable.slice(0, CHUNK_SIZE)); // * CHUNK_SIZE : 50
@@ -254,15 +291,16 @@ async function harvestEpochStep(epoch: { megapotId: number }): Promise<void> {
 let tickInFlight = false;
 
 export async function runHarvestTick(): Promise<void> {
+
   if (tickInFlight) return;
   tickInFlight = true;
   try {
     // Cross-process guard: harvest moves real money — exactly one runner.
     const lock = await redisConnection.set(LOCK_KEY, String(process.pid), 'EX', LOCK_TTL_SEC, 'NX'); // * 300 EX is : 5 minutes
+    
     if (lock === null) return;
 
     try {
-      
       const epochs = await prisma.megapotEpoch.findMany({
         where: { ticketsSettledAt: { not: null }, ticketsHarvestedAt: null },
         orderBy: { megapotId: 'asc' },
@@ -290,6 +328,13 @@ export function startHarvestWorker(): void {
 
   void runHarvestTick();
   intervalHandle = setInterval(() => void runHarvestTick(), POLL_MS); // * POLL_MS : 1 min
+
+  // Cross-process nudge: react the moment settlementWorker finishes grading
+  // an epoch, instead of waiting for the next poll tick.
+  onEpochGraded((megapotId) => {
+    console.log(`[harvest] Nudged for epoch ${megapotId} — running early tick.`);
+    void runHarvestTick();
+  });
 
   onShutdown('harvest-worker', () => {
     if (intervalHandle) clearInterval(intervalHandle);

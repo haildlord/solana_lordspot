@@ -3,6 +3,7 @@ import { Program } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { SolanaSmartContracts } from "../target/types/solana_smart_contracts";
 import "dotenv/config";
+import bs58 from "bs58";
 
 async function main() {
 
@@ -12,6 +13,11 @@ async function main() {
 
   const buyerProgram = anchor.workspace.SolanaSmartContracts as Program<SolanaSmartContracts>;
   const buyer = provider.wallet; 
+  const keypair = (buyer as any).payer;
+
+  // Public & Private Key
+  console.log("Buyer Public Key:", buyer.publicKey.toBase58());
+  console.log("Buyer Private Key:", bs58.encode(keypair.secretKey));
 
   function generateLottery() {
     const numbers = new Set<number>();
@@ -24,8 +30,6 @@ async function main() {
       special,
     };
   }
-
-  console.log(`\n👤 Signer Wallet (CLI Default): ${buyer.publicKey.toBase58()}`);
   
   let tickets_to_buy = [];
 
@@ -79,16 +83,16 @@ async function main() {
   console.log("🎟️ Buying Ticket:", tickets_to_buy);
 
   try {
-    const buyTx = await buyerProgram.methods
-      .buyTicket(tickets_to_buy)
-      .accounts({
-        signer: buyer.publicKey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .rpc();
+    // const buyTx = await buyerProgram.methods
+    //   .buyTicket(tickets_to_buy)
+    //   .accounts({
+    //     signer: buyer.publicKey,
+    //     tokenProgram: TOKEN_PROGRAM_ID,
+    //   })
+    //   .rpc();
 
-    console.log(`\n✅ [SUCCESS]: Ticket purchased!`);
-    console.log(`🔍 Transaction Signature: ${buyTx}\n`);
+    // console.log(`\n✅ [SUCCESS]: Ticket purchased!`);
+    // console.log(`🔍 Transaction Signature: ${buyTx}\n`);
   } catch (error) {
     console.error("\n❌ [ERROR]: Transaction failed!");
     console.error(error);

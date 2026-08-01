@@ -16,5 +16,6 @@ wallet = "~/.config/solana/id.json"
 [scripts]
 test = "npx ts-node tests/buyTickets.ts"
 view-state = "npx ts-node tests/viewState.ts"
+withdraw = "npx ts-node scripts/transferUSDC.ts"
 
 [hooks]

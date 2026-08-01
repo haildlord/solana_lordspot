@@ -1,6 +1,7 @@
 import { prisma } from '../lib/db';
 import { megapotService } from '../services/megapotService';
 import { onShutdown } from '../lib/shutdown';
+import { onEpochSettled, publishEpochGraded } from '../lib/epochEvents';
 
 /**
  * The SETTLEMENT pass — third poller alongside the confirmer.
@@ -227,6 +228,9 @@ async function settleEpoch(epoch: {
   });
 
   console.log(`[settlement] Epoch ${epoch.megapotId} settled: ${graded} ticket(s) graded, ${winners} winner(s).`);
+
+  // Nudge harvest so it doesn't wait up to 60s for its own poll — see lib/epochEvents.ts.
+  publishEpochGraded(epoch.megapotId);
   return true;
 }
 
@@ -312,6 +316,13 @@ export function startSettlementWorker(): void {
   void runSettlementTick(); // immediate catch-up on boot, don't wait a full interval
 
   intervalId = setInterval(() => void runSettlementTick(), POLL_MS); // 1 min
+
+  // Cross-process nudge: react the moment megapotService saves a newly
+  // settled epoch, instead of waiting for the next poll tick.
+  onEpochSettled((megapotId) => {
+    console.log(`[settlement] Nudged for epoch ${megapotId} — running early tick.`);
+    void runSettlementTick();
+  });
 
   onShutdown('settlement-worker', () => {
     if (intervalId) clearInterval(intervalId);

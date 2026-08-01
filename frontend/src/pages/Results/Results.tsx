@@ -1,13 +1,24 @@
 import { useMemo, useState } from 'react';
-import { useEpochs, useEpochWinners, useAllTimeStats } from '../../api/hooks';
+import { useEpochs, useEpochWinners, useEpochWinnerDetail, useAllTimeStats } from '../../api/hooks';
 import { formatUsdc, formatDollarAmount, shortenAddress } from '../../lib/format';
 import { NumberBall } from '../../components/NumberBall/NumberBall';
 import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { CoinLoader } from '../../components/CoinLoader/CoinLoader';
-import type { EpochSummary, PrizeTier } from '../../api/types';
+import type { EpochSummary, PrizeTier, WinStatus } from '../../api/types';
 import styles from './Results.module.css';
 
 const FREE_TICKET_TIER_IDS = new Set([1, 4]);
+
+function winnerTicketStatus(winStatus: WinStatus, winAmountUsdc: string): { label: string; className: 'win' | 'free' | 'loss' } {
+  switch (winStatus) {
+    case 'WON_FREE_TICKET':
+      return { label: 'Free Ticket', className: 'free' };
+    case 'LOST':
+      return { label: 'No Win', className: 'loss' };
+    default:
+      return { label: `Win ${formatUsdc(winAmountUsdc)}`, className: 'win' };
+  }
+}
 
 function tierLabel(tier: PrizeTier): string {
   // Reverse-engineer the matches using division and modulo
@@ -26,15 +37,16 @@ function formatDate(iso: string): string {
 }
 
 export function Results() {
-  const { data, isLoading } = useEpochs();
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useEpochs();
 
   const { data: stats } = useAllTimeStats();
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
+  const epochs = useMemo(() => data?.pages.flatMap((p) => p.epochs) ?? [], [data]);
 
   const selected = useMemo(
-    () => data?.epochs.find((e) => e.megapotId === selectedId) ?? null,
-    [data, selectedId]
+    () => epochs.find((e) => e.megapotId === selectedId) ?? null,
+    [epochs, selectedId]
   );
 
   if (selected) {
@@ -63,16 +75,16 @@ export function Results() {
 
       {isLoading && (
         <div className={styles.loading}>
-          <CoinLoader size="lg" label="" />
+          <CoinLoader size="md" label="" />
         </div>
       )}
 
-      {!isLoading && (!data || data.epochs.length === 0) && (
+      {!isLoading && epochs.length === 0 && (
         <EmptyState icon="🕓" title="No settled draws yet" description="Results appear here once the first drawing concludes." />
       )}
 
       <div className={styles.list}>
-        {data?.epochs.map((epoch) => {
+        {epochs.map((epoch) => {
           const jackpotPrize = formatUsdc(epoch.jackpot, { 
             decimals: 0 
           });
@@ -103,6 +115,18 @@ export function Results() {
           );
         })}
       </div>
+
+      {hasNextPage && (
+        <div className={styles.loadMoreWrap}>
+          <button
+            className={styles.loadMoreButton}
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? 'Loading…' : 'Load More Draws'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -125,7 +149,16 @@ function TicketStub({ normals, bonus, size }: { normals: number[]; bonus: number
 
 function EpochDetail({ epoch, onBack }: { epoch: EpochSummary; onBack: () => void }) {
   const [tab, setTab] = useState<'winners' | 'tiers'>('winners');
-  const { data: winnersData, isLoading: winnersLoading } = useEpochWinners(epoch.megapotId);
+  const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
+  const {
+    data: winnersData,
+    isLoading: winnersLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useEpochWinners(epoch.megapotId);
+
+  const winners = useMemo(() => winnersData?.pages.flatMap((p) => p.winners) ?? [], [winnersData]);
 
   // Updated to use camelCase properties from the new optimized DB structure
   const sortedTiers = epoch.prizeTiers
@@ -191,24 +224,53 @@ function EpochDetail({ epoch, onBack }: { epoch: EpochSummary; onBack: () => voi
       </div>
 
       {tab === 'winners' && (
-        <div className={styles.winnersList}>
-          {winnersLoading && <CoinLoader size="sm" label="Loading winners" />}
-          {!winnersLoading && (!winnersData || winnersData.winners.length === 0) && (
-            <EmptyState title="No winning tickets this round" />
-          )}
-          {winnersData?.winners.map((w, i) => (
-            <div key={i} className={styles.winnerRow}>
-              <div className={styles.winnerLeft}>
-                <div className={styles.avatar}>👤</div>
-                <div>
-                  <p className={styles.winnerAddress}>{shortenAddress(w.buyer)}</p>
-                  <p className={styles.winnerTickets}>{w.ticketCount} winning ticket{w.ticketCount === 1 ? '' : 's'}</p>
+        <>
+          <div className={styles.winnersList}>
+            {winnersLoading && <CoinLoader size="sm" label="Loading winners" />}
+            {!winnersLoading && winners.length === 0 && (
+              <EmptyState title="No winning tickets this round" />
+            )}
+            {winners.map((w) => (
+              <button
+                key={w.buyer}
+                type="button"
+                className={styles.winnerRow}
+                onClick={() => setSelectedWinner(w.buyer)}
+              >
+                <div className={styles.winnerLeft}>
+                  <div className={styles.avatar}>👤</div>
+                  <div>
+                    <p className={styles.winnerAddress}>{shortenAddress(w.buyer)}</p>
+                    <p className={styles.winnerTickets}>{w.ticketCount} winning ticket{w.ticketCount === 1 ? '' : 's'}</p>
+                  </div>
                 </div>
-              </div>
-              <span className={styles.winnerAmount}>{formatUsdc(w.totalUsdc)}</span>
+                <span className={styles.winnerAmount}>{formatUsdc(w.totalUsdc)}</span>
+              </button>
+            ))}
+          </div>
+
+          {hasNextPage && (
+            <div className={styles.loadMoreWrap}>
+              <button
+                className={styles.loadMoreButton}
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage ? 'Loading…' : 'Load More Winners'}
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
+      )}
+
+      {selectedWinner && (
+        <WinnerDetailModal
+          megapotId={epoch.megapotId}
+          buyer={selectedWinner}
+          winningNormals={epoch.winningNormals}
+          winningBonusBall={epoch.winningBonusBall}
+          onClose={() => setSelectedWinner(null)}
+        />
       )}
 
       {tab === 'tiers' && (
@@ -275,6 +337,73 @@ function EpochDetail({ epoch, onBack }: { epoch: EpochSummary; onBack: () => voi
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function WinnerDetailModal({
+  megapotId,
+  buyer,
+  winningNormals,
+  winningBonusBall,
+  onClose,
+}: {
+  megapotId: number;
+  buyer: string;
+  winningNormals: number[];
+  winningBonusBall: number;
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useEpochWinnerDetail(megapotId, buyer);
+  const winningSet = useMemo(() => new Set(winningNormals), [winningNormals]);
+
+  return (
+    <div className={styles.modalBackdrop} onClick={onClose}>
+      <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.modalHeader}>
+          <h3 className={styles.modalTitle}>Recent Winner</h3>
+          <button type="button" className={styles.modalClose} onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <div className={styles.modalWinner}>
+          <div className={styles.avatar}>👤</div>
+          <span className={styles.winnerAddress}>{shortenAddress(buyer)}</span>
+        </div>
+
+        <div className={styles.purchasedHeader}>
+          <h4 className={styles.purchasedTitle}>Purchased</h4>
+          {data && (
+            <span className={styles.purchasedCount}>
+              {data.tickets.length} Ticket{data.tickets.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+
+        <div className={styles.modalScrollList}>
+          {isLoading && (
+            <div className={styles.loading}>
+              <CoinLoader size="sm" label="" />
+            </div>
+          )}
+          {data?.tickets.map((t, i) => {
+            const { label, className } = winnerTicketStatus(t.winStatus, t.winAmountUsdc);
+            const bonusMatched = t.bonusBall === winningBonusBall;
+            return (
+              <div key={i} className={styles.modalTicketRow}>
+                <div className={styles.modalTicketBalls}>
+                  {t.normalBalls.map((n, j) => (
+                    <NumberBall key={j} number={n} size="sm" selected={winningSet.has(n)} />
+                  ))}
+                  <NumberBall number={t.bonusBall} variant="bonus" size="sm" selected={bonusMatched} />
+                </div>
+                <span className={`${styles.modalTicketPill} ${styles[`modalPill_${className}`]}`}>{label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

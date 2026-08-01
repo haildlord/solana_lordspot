@@ -296,3 +296,65 @@
 .buyButton:disabled {
   opacity: 0.4;
 }
+
+
+
+.jackpottext {
+  position: relative;
+  font-family: 'Arial Black', Impact, sans-serif;
+  font-size: 8rem;
+  font-weight: 900;
+  letter-spacing: -3px; /* Pulls letters closer together */
+  margin: 0;
+  
+  /* 1. Stacked 3D Shadows (Gold -> Cyan -> Dark Blue) */
+  /* Shadows are offset to the bottom-left (-x, +y) */
+  color: transparent; /* Hide the original text */
+  text-shadow: 
+    /* Gold Edge */
+    -1px 1px 0 #ffe382,
+    -2px 2px 0 #d4af37,
+    -3px 3px 0 #9e7a15,
+    
+    /* Cyan / Light Blue Mid-layer */
+    -4px 4px 0 #00ffff,
+    -5px 5px 0 #00bfff,
+    -6px 6px 0 #0099ff,
+    -7px 7px 0 #0077ff,
+    
+    /* Dark Blue Deep Layer */
+    -8px 8px 0 #0000cc,
+    -9px 9px 0 #0000aa,
+    -10px 10px 0 #000088,
+    -11px 11px 0 #000066,
+    -12px 12px 0 #000044,
+    
+    /* Soft Drop Shadow at the very bottom */
+    -18px 18px 15px rgba(0, 0, 0, 0.8);
+}
+
+/* 2. The Silver Gradient Front Face */
+.jackpottext::before {
+  content: attr(data-text);
+  position: absolute;
+  left: 0;
+  top: 0;
+  
+  /* Silver/White metallic gradient */
+  background: linear-gradient(
+    to bottom, 
+    #ffffff 0%, 
+    #f0f0f0 30%, 
+    #c0c0c0 50%, 
+    #e8e8e8 70%, 
+    #a0a0a0 100%
+  );
+  
+  /* Clip the background to the text shape */
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  
+  /* Slight inner shadow trick for the rounded top edge */
+  filter: drop-shadow(0px -1px 1px rgba(255,255,255,0.8));
+}

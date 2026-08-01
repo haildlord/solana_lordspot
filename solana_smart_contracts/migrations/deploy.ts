@@ -1,9 +1,8 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { PublicKey, Keypair, Transaction, SystemProgram, TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, Keypair } from "@solana/web3.js";
 import { 
   TOKEN_PROGRAM_ID, 
-  ASSOCIATED_TOKEN_PROGRAM_ID, 
   getAssociatedTokenAddressSync 
 } from "@solana/spl-token";
 import bs58 from "bs58";

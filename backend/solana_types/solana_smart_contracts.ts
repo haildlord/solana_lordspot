@@ -295,6 +295,323 @@ export type SolanaSmartContracts = {
       ]
     },
     {
+      "name": "claimWinnings",
+      "docs": [
+        "User-pulled payout authorized by a TWO-SIGNATURE voucher — no per-user",
+        "balance is ever stored on-chain, so the relayer pays zero rent and",
+        "zero fees for claims.",
+        "",
+        "Flow: the backend looks up the user's total claimable winnings in its",
+        "own books (settlement + harvest data), builds this instruction with",
+        "that exact `amount`, PARTIALLY SIGNS it with the admin key, and hands",
+        "it to the frontend. The user counter-signs in their wallet (also",
+        "paying the tx fee) and submits. USDC moves vault → user ATA directly.",
+        "",
+        "Why `amount` can be trusted: the admin co-signature. A user alone",
+        "cannot invent a voucher (admin constraint fails); a stolen voucher",
+        "pays only the wallet named in it, since the destination is the",
+        "signer's own canonical ATA — it cannot be redirected.",
+        "",
+        "Replay safety: a Solana transaction executes at most once and its",
+        "blockhash expires in ~60s, so a landed or expired voucher is dead.",
+        "What the chain CANNOT see is double-ISSUANCE — the backend must never",
+        "have two live unconfirmed vouchers out for the same user (one-live-",
+        "voucher-per-user discipline, enforced off-chain).",
+        "",
+        "Gated on is_lords_pot_paused: pause is the protocol-wide emergency",
+        "brake and freezes purchases AND claims. A voucher issued just before a",
+        "pause reverts cleanly and dies at blockhash expiry — no stuck state.",
+        "Only withdraw_vault_funds is exempt from the pause (evacuation lever)."
+      ],
+      "discriminator": [
+        161,
+        215,
+        24,
+        59,
+        14,
+        236,
+        242,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "docs": [
+            "The winner receiving the payout. Must sign: proves live control of",
+            "the destination wallet and gives explicit consent. Also the fee",
+            "payer, so the relayer spends nothing on claims."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "The backend admin key must ALSO sign this same transaction — the",
+            "co-signature is what authorizes `amount`. Neither party alone can",
+            "move a single unit: the user can't invent a voucher, and the admin",
+            "can't pay out to a wallet that didn't counter-sign."
+          ],
+          "signer": true
+        },
+        {
+          "name": "lordsPotState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "userUsdcAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vaultUsdcAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "vaultAuthority"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "vaultAuthority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcMint",
+          "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "initialize",
       "discriminator": [
         175,
@@ -653,6 +970,197 @@ export type SolanaSmartContracts = {
           "type": "u8"
         }
       ]
+    },
+    {
+      "name": "withdrawVaultFunds",
+      "docs": [
+        "Admin-only withdrawal from the vault USDC ATA to any USDC token account.",
+        "Three uses: recovering devnet USDC after testing, production treasury",
+        "rebalancing (CCTP bridging of the Solana/Base imbalance), and emergency",
+        "evacuation of funds.",
+        "",
+        "Deliberately NOT gated on is_lords_pot_paused: this is the evacuation",
+        "lever — it must keep working mid-incident, precisely when everything",
+        "else (purchases, claims) is frozen by the pause."
+      ],
+      "discriminator": [
+        230,
+        233,
+        148,
+        2,
+        238,
+        220,
+        211,
+        165
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "lordsPotState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "vaultUsdcAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "vaultAuthority"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "destinationUsdcAccount",
+          "writable": true
+        },
+        {
+          "name": "vaultAuthority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdcMint",
+          "address": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -683,13 +1191,39 @@ export type SolanaSmartContracts = {
         78,
         243
       ]
+    },
+    {
+      "name": "vaultWithdrawalEvent",
+      "discriminator": [
+        91,
+        249,
+        120,
+        213,
+        56,
+        120,
+        34,
+        142
+      ]
+    },
+    {
+      "name": "winningsClaimedEvent",
+      "discriminator": [
+        30,
+        231,
+        120,
+        152,
+        158,
+        82,
+        26,
+        135
+      ]
     }
   ],
   "errors": [
     {
       "code": 6000,
       "name": "protocolPaused",
-      "msg": "Ticket sales are frozen during the epoch rollover."
+      "msg": "Protocol is paused — purchases and claims are temporarily frozen."
     },
     {
       "code": 6001,
@@ -745,6 +1279,21 @@ export type SolanaSmartContracts = {
       "code": 6011,
       "name": "invalidNextEpoch",
       "msg": "The provided next epoch must be strictly greater than the current ongoing epoch."
+    },
+    {
+      "code": 6012,
+      "name": "invalidAmount",
+      "msg": "Amount must be greater than zero."
+    },
+    {
+      "code": 6013,
+      "name": "insufficientVaultFunds",
+      "msg": "Vault does not hold enough USDC for this transfer."
+    },
+    {
+      "code": 6014,
+      "name": "invalidDestination",
+      "msg": "Destination token account mint does not match the vault USDC mint."
     }
   ],
   "types": [
@@ -834,6 +1383,50 @@ export type SolanaSmartContracts = {
           {
             "name": "epoch",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "vaultWithdrawalEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "winningsClaimedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
           }
         ]
       }
