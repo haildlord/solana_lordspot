@@ -21,15 +21,15 @@ export function TransactionOverlay({
 
   return (
     <div className={styles.overlay}>
-      <div className={styles.card}>
         {state === 'loading' && (
           <>
-            <CoinLoader size="lg" />
-            <p className={styles.loadingText}>{loadingText}</p>
+            <CoinLoader size="md" />
+            {/* <p className={styles.loadingText}>{loadingText}</p> */}
           </>
         )}
 
         {state === 'success' && (
+        <div className={styles.card}>
           <div className={styles.resultWrap}>
             <div className={`${styles.iconCircle} ${styles.iconSuccess}`}>
               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -38,9 +38,11 @@ export function TransactionOverlay({
             </div>
             <p className={`${styles.resultText} ${styles.successText}`}>{successText}</p>
           </div>
+          </div>
         )}
 
         {state === 'error' && (
+        <div className={styles.card}>
           <div className={styles.resultWrap}>
             <div className={`${styles.iconCircle} ${styles.iconError}`}>
               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -49,8 +51,8 @@ export function TransactionOverlay({
             </div>
             <p className={`${styles.resultText} ${styles.errorText}`}>{errorText}</p>
           </div>
+          </div>
         )}
-      </div>
-    </div>
+        </div>
   );
 }

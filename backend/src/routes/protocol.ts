@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { PublicKey } from '@solana/web3.js';
 import { prisma } from '../lib/db';
+import { megapotService } from '../services/megapotService';
 
 /**
  * Read-only protocol data for the frontend. Deliberately separate from the
@@ -32,6 +33,11 @@ router.get('/state', async (_req: Request, res: Response) => {
   const state = await prisma.protocolState.findUnique({ where: { id: 'singleton' } });
   if (!state) return res.status(503).json({ error: 'Protocol state not yet synced' });
 
+  // ProtocolState.endedAt already carries the same UI buffer megapotService
+  // bakes into a settled MegapotEpoch's endedAt (see EPOCH_END_UI_BUFFER_MS) —
+  // so a ticket's countdown target never jumps when its epoch moves from
+  // "currently running" to "settled, awaiting reveal": both sides of that
+  // transition read from a value padded the same way.
   return res.json({
     isPaused: state.isPaused,
     megapotEpochId: state.currentEpochId,
@@ -49,7 +55,10 @@ router.get('/epochs', async (req: Request, res: Response) => {
   const cursor = req.query.cursor ? Number(req.query.cursor) : undefined;
 
   const epochs = await prisma.megapotEpoch.findMany({
-    where: cursor ? { megapotId: { lt: cursor } } : undefined,
+    where: {
+      ...megapotService.revealedEpochWhere(),
+      ...(cursor ? { megapotId: { lt: cursor } } : {}),
+    },
     orderBy: { megapotId: 'desc' },
     take: limit,
   });
@@ -133,6 +142,9 @@ const WINNING_STATUSES = ['WON_UNCLAIMED', 'WON_FREE_TICKET', 'CLAIMED_ON_BASE',
 router.get('/epochs/:megapotId/winners', async (req: Request, res: Response) => {
   const megapotId = Number(req.params.megapotId);
   if (!Number.isInteger(megapotId)) return res.status(400).json({ error: 'Invalid epoch id' });
+  if (!(await megapotService.isEpochRevealed(megapotId))) {
+    return res.status(404).json({ error: 'Settled epoch not found' });
+  }
 
   const limit = Math.min(Number(req.query.limit) || 20, 50);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
@@ -173,6 +185,9 @@ router.get('/epochs/:megapotId/winners', async (req: Request, res: Response) => 
 router.get('/epochs/:megapotId/winners/:buyer', async (req: Request, res: Response) => {
   const megapotId = Number(req.params.megapotId);
   if (!Number.isInteger(megapotId)) return res.status(400).json({ error: 'Invalid epoch id' });
+  if (!(await megapotService.isEpochRevealed(megapotId))) {
+    return res.status(404).json({ error: 'Settled epoch not found' });
+  }
 
   const buyer = parseWallet(req.params.buyer);
   if (!buyer) return res.status(400).json({ error: 'Invalid buyer wallet' });
@@ -226,30 +241,50 @@ router.get('/tickets', async (req: Request, res: Response) => {
   const epochs = epochIds.length
     ? await prisma.megapotEpoch.findMany({
         where: { megapotId: { in: epochIds } },
-        select: { megapotId: true, drawnAt: true, winningNormals: true, winningBonusBall: true },
+        select: { megapotId: true, endedAt: true, drawnAt: true, winningNormals: true, winningBonusBall: true },
       })
     : [];
   const epochById = new Map(epochs.map((e) => [e.megapotId, e]));
 
+  // Not-yet-revealed epochs (padded endedAt hasn't passed) have their
+  // tickets made to look exactly like they haven't been graded yet, even
+  // though settlement/harvest may already be done. Same rendering path the
+  // frontend already uses for a genuinely-still-pending ticket, so no frontend
+  // change is needed for this to work: it just isn't "settled" yet as far as
+  // the API is concerned.
+  const revealedEpochIds = await megapotService.getRevealedEpochIds();
+
   return res.json({
     tickets: tickets.map((t) => {
-      const epoch = t.relayOrder.fulfillEpoch !== null ? epochById.get(t.relayOrder.fulfillEpoch) : undefined;
+      const fulfillEpoch = t.relayOrder.fulfillEpoch;
+      const isRevealed = fulfillEpoch === null || revealedEpochIds.has(fulfillEpoch);
+      // Looked up unconditionally (not gated on isRevealed) — the row exists
+      // the instant a rollover is detected, well before its own reveal buffer
+      // clears, and endedAt is just a timestamp, not the drawing's outcome, so
+      // it's safe to hand to the frontend early as this ticket's own countdown
+      // target. Only the actual result fields below stay gated on isRevealed.
+      const epoch = fulfillEpoch !== null ? epochById.get(fulfillEpoch) : undefined;
       return {
         id: t.id,
         normalBalls: t.normalBalls,
         bonusBall: t.bonusBall,
-        winStatus: t.winStatus,
-        winAmountUsdc: t.winAmount.toString(),
-        isFreeTicketTier: t.isFreeTicketTier,
+        winStatus: isRevealed ? t.winStatus : 'DRAW_PENDING',
+        winAmountUsdc: isRevealed ? t.winAmount.toString() : '0',
+        isFreeTicketTier: isRevealed && t.isFreeTicketTier,
         purchaseEpoch: t.relayOrder.purchaseEpoch,
         fulfillEpoch: t.relayOrder.fulfillEpoch,
         orderStatus: t.relayOrder.status,
         purchasedAt: t.relayOrder.lastBought,
         orderHash: t.relayOrder.hash,
         txSignature: t.relayOrder.signature,
-        epochSettledAt: epoch?.drawnAt ?? null,
-        epochWinningNormals: epoch?.winningNormals ?? null,
-        epochWinningBonusBall: epoch?.winningBonusBall ?? null,
+        // Per-ticket, not per-order: a large purchase can relay across several
+        // Base transactions (chunked — see baseRelayWorker.ts), so different
+        // tickets from the same Solana order can carry different Base tx hashes.
+        baseTxHash: t.baseTxHash,
+        epochEndedAt: epoch?.endedAt ?? null,
+        epochSettledAt: isRevealed ? (epoch?.drawnAt ?? null) : null,
+        epochWinningNormals: isRevealed ? (epoch?.winningNormals ?? null) : null,
+        epochWinningBonusBall: isRevealed ? (epoch?.winningBonusBall ?? null) : null,
       };
     }),
   });

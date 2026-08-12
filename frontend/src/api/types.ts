@@ -3,6 +3,9 @@
 export interface ProtocolStateResponse {
   isPaused: boolean;
   megapotEpochId: number | null;
+  /** Already carries the backend's UI reveal buffer baked in (see
+   * megapotService's EPOCH_END_UI_BUFFER_MS) — use directly as a countdown
+   * target, no extra client-side padding needed. */
   nextDrawAt: string | null;
   prizePoolUsdc: string;
   maxNormalBall: number | null;
@@ -108,7 +111,13 @@ export interface UserTicket {
   purchasedAt: string;
   orderHash: string;
   txSignature: string;
-  /** Null until the drawing this ticket fulfills into has settled. */
+  baseTxHash: string | null;
+  /** This ticket's own countdown/reveal target — its fulfillment epoch's
+   * (already-padded) endedAt, set the instant that epoch settles, well before
+   * reveal itself. Null only while fulfillEpoch is still the currently-running
+   * epoch (use ProtocolStateResponse.nextDrawAt instead) or genuinely unset. */
+  epochEndedAt: string | null;
+  /** Null until the drawing this ticket fulfills into has actually revealed. */
   epochSettledAt: string | null;
   epochWinningNormals: number[] | null;
   epochWinningBonusBall: number | null;

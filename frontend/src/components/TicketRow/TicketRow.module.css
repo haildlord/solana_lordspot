@@ -1,18 +1,18 @@
+/* No border/radius/background of its own — .row lives inside Tickets.module.css's
+   .groupList, which is the shared scrollable card; rows are separated by a
+   hairline instead of stacked boxes with gaps (see :not(:first-child) below).
+   A winning ticket is now signaled at the ball level (NumberBall's `winning`
+   glow) rather than a row-level border, so there's no separate "win" row style. */
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  transition: border-color var(--duration-fast) var(--ease-out);
+  padding: var(--space-3) var(--space-4);
 }
 
-.rowWin {
-  border-color: rgba(212, 175, 55, 0.35);
-  box-shadow: 0 0 12px rgba(212, 175, 55, 0.12);
+.row:not(:first-child) {
+  border-top: 1px solid var(--color-border);
 }
 
 .balls {

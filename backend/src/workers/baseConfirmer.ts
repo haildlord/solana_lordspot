@@ -114,7 +114,7 @@ async function bounceToRetry(order: SubmittedOrder, reason: string): Promise<voi
 }
 
 /** Re-simulate a mined-but-reverted tx at latest state to extract the revert reason. */
-async function classifyMinedRevert(txHash: string): Promise<RevertClass> {
+export async function classifyMinedRevert(txHash: string): Promise<RevertClass> {
 
   const provider = baseService.getProvider();
   const tx = await provider.getTransaction(txHash);    // * eth_getTransactionByHash

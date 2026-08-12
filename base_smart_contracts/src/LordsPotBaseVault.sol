@@ -169,7 +169,7 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
         IERC20 usdc = IERC20(vaultInfo.usdcAddress);
         uint256 balanceBefore = usdc.balanceOf(address(this));      // 1. CHECK (snapshot)
         // -> uncomment this in production
-        // vaultInfo.megapotAddress.claimWinnings(_ticketIds);         // 2. INTERACTION (trusted, nonReentrant)
+        // vaultInfo.megapotAddress.claimWinnings(_ticketIds);      // 2. INTERACTION (trusted, nonReentrant)
         vaultInfo.megapotAddress.claimWinnings(_ticketIds, _packedTickets, _winningPackedTicket, _winningBallMax, _winningAmount);
 
         uint256 harvested = usdc.balanceOf(address(this)) - balanceBefore;
@@ -181,8 +181,6 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
     // --- Treasury Management ---
     function withdrawUsdc(address _to, uint256 _amount) external onlyOwner {
         if (_to == address(0)) revert InvalidAddress();
-        
-        // Handles non-compliant tokens gracefully
         IERC20(vaultInfo.usdcAddress).safeTransfer(_to, _amount);
         emit UsdcWithdrawn(_to, _amount);
     }

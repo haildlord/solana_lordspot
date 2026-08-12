@@ -37,6 +37,7 @@ function formatDate(iso: string): string {
 }
 
 export function Results() {
+
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useEpochs();
 
   const { data: stats } = useAllTimeStats();
@@ -74,8 +75,9 @@ export function Results() {
       <h2 className={styles.sectionTitle}>Past Draws</h2>
 
       {isLoading && (
+        // when results list is being loaded
         <div className={styles.loading}>
-          <CoinLoader size="md" label="" />
+          <CoinLoader size="md" />
         </div>
       )}
 
@@ -382,9 +384,9 @@ function WinnerDetailModal({
         </div>
 
         <div className={styles.modalScrollList}>
-          {isLoading && (
+          {!isLoading && (
             <div className={styles.loading}>
-              <CoinLoader size="sm" label="" />
+              <CoinLoader size="md" label="" />
             </div>
           )}
           {data?.tickets.map((t, i) => {
@@ -394,9 +396,9 @@ function WinnerDetailModal({
               <div key={i} className={styles.modalTicketRow}>
                 <div className={styles.modalTicketBalls}>
                   {t.normalBalls.map((n, j) => (
-                    <NumberBall key={j} number={n} size="sm" selected={winningSet.has(n)} />
+                    <NumberBall key={j} number={n} size="sm" winning={winningSet.has(n)} />
                   ))}
-                  <NumberBall number={t.bonusBall} variant="bonus" size="sm" selected={bonusMatched} />
+                  <NumberBall number={t.bonusBall} variant="bonus" size="sm" winning={bonusMatched} />
                 </div>
                 <span className={`${styles.modalTicketPill} ${styles[`modalPill_${className}`]}`}>{label}</span>
               </div>

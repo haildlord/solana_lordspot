@@ -61,7 +61,19 @@ export const config = {
     maxAttempts: 50,
     baseBackoffMs: 5_000, // When a transaction/order fails, the system will wait 5 seconds before trying again
     maxBackoffMs: 300_000, // No matter how many times it fails, the system will never wait more than 5 minutes between retries.
-    processingTimeoutMs: 5 * 60_000, // This is the maximum time allowed for one processing attempt to complete.
+    // Worst case now: a 100-ticket order (Solana's own per-tx cap) chunked at
+    // 15/tx is ~7 Base transactions, each waited on synchronously up to
+    // RECEIPT_TIMEOUT_MS (3 min) in baseRelayWorker.ts — ~21 min worst case.
+    // 30 min leaves real margin so the reconciler can never yank an order
+    // back to RETRY_PENDING while it's still legitimately mid-flight (that
+    // would let a second job start processing the same order concurrently).
+    processingTimeoutMs: 30 * 60_000,
     minVaultUsdc: BigInt(process.env.MIN_BASE_VAULT_USDC ?? '100000000'),
+    // Orders larger than this relay as multiple sequential Base transactions
+    // (RelayBatch rows) instead of one. EIP-7825 caps a single Base tx at
+    // 16,777,216 gas; this contract's per-ticket combo-tracking costs
+    // ~800-824k gas/ticket, so 15 tickets/tx stays comfortably under that
+    // wall alongside baseService.ts's BASE_GAS_OVERHEAD/GAS_PER_TICKET formula.
+    baseTicketChunkSize: 15,
   },
 } as const;

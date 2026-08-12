@@ -55,13 +55,19 @@ export async function runReconciler(): Promise<void> {
   for (const order of pending) {
     if (order.status === 'DEFERRED' && !canRelay) continue;
 
-    // jobId is suffixed with attemptCount: BullMQ retains completed jobs, so
+    // jobId must be fresh on every pass: BullMQ retains completed jobs, so
     // re-adding the original `relay-${hash}` id would silently dedupe against
-    // the finished job and the re-enqueue would never run.
+    // the finished job and the re-enqueue would never run. attemptCount can't
+    // serve as that suffix — the "protocol paused, defer" path in
+    // baseRelayWorker.ts never increments it, so an order that keeps getting
+    // deferred (never reaching a real submit attempt) would get the exact
+    // same jobId every single reconciler tick, silently deduping forever.
+    // Date.now() is guaranteed to differ on every pass regardless of which
+    // path the order took last.
     await baseRelayQueue.add(
       'relay-to-base',
       { hash: order.hash },
-      { jobId: `relay-${order.hash}-r${order.attemptCount}` }
+      { jobId: `relay-${order.hash}-r${Date.now()}` }
     );
     reEnqueued++;
   }

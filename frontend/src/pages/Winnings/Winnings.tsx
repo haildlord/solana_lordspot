@@ -64,11 +64,11 @@ export function Winnings() {
         title="Connect to view winnings"
         description="Check what's claimable and pull it straight to your wallet."
       >
-        {isLoading && (
-          <div className={styles.loading}>
-            <CoinLoader size="md" label="Loading balance" />
+        {/* {isLoading && (
+          <div className={styles.loading}> // -> remove loading css from here
+            <CoinLoader size="md" />
           </div>
-        )}
+        )} */}
 
         {!isLoading && summary && (
           <>
@@ -93,8 +93,8 @@ export function Winnings() {
                     <p className={styles.label}>Free tickets</p>
                     <p className={styles.valueSecondary}>{summary.freeTickets}</p>
                   </div>
-                  <button className={styles.playFreeButton} disabled title="Redemption is coming in a future update">
-                    Play Free
+                  <button className={styles.playFreeButton} disabled title="Paid out with your Winnings above for now — redeeming as a free ticket is coming in a future update">
+                    Included in Claim
                   </button>
                 </div>
               )}

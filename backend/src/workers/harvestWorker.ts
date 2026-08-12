@@ -37,10 +37,32 @@ const QUARANTINE_KEY = 'harvest:quarantined_ticket_ids';
 
 const HARVESTABLE = ['WON_UNCLAIMED', 'WON_FREE_TICKET'] as const;
 
+
+
+// -> Remove below in production
+
+// === TESTING ONLY — remove this block + every call site marked TESTING ONLY below
+// once the real Jackpot/vault/server ship.
+const TEST_NORMAL_MAX = 30n; // must match the normalMax passed into
+                              // TicketComboTracker.init(...) in Jackpot's constructor
+
+function packTicketForTest(normalBalls: number[], bonusBall: number): bigint {
+  let packed = 0n;
+  for (const n of normalBalls) packed |= 1n << BigInt(n);
+  packed |= 1n << (TEST_NORMAL_MAX + BigInt(bonusBall));
+  return packed;
+}
+// === END TESTING ONLY (helper)
+// -> Remove above in production
+
+
+
 interface BatchTicket {
   id: string;
   megapotNftId: string | null;
   winAmount: bigint;
+  normalBalls: number[]; // -> Remove in production
+  bonusBall: number;     // -> Remove in production
 }
 
 /** Tickets of one epoch still needing harvest (excluding quarantined ones). */
@@ -52,7 +74,8 @@ async function findHarvestableTickets(megapotId: number, quarantined: Set<string
       megapotNftId: { not: null },
       relayOrder: { fulfillEpoch: megapotId, status: 'SUCCESS' },
     },
-    select: { id: true, megapotNftId: true, winAmount: true },
+    // -> uncomment this in production and remove below one select: { id: true, megapotNftId: true, winAmount: true },
+    select: { id: true, megapotNftId: true, winAmount: true, normalBalls: true, bonusBall: true }, // -> TESTING ONLY: +normalBalls, +bonusBall
     take: CHUNK_SIZE * 2, // headroom so quarantine-filtering still fills a chunk
   });
   return tickets.filter((t) => !quarantined.has(t.id));
@@ -63,16 +86,46 @@ async function findHarvestableTickets(megapotId: number, quarantined: Set<string
  * estimateGas is the free rehearsal — on failure, bisect to isolate exactly
  * which ids are unclaimable, at zero gas cost.
  */
-async function bisectClaimable(tickets: BatchTicket[]): Promise<{ good: BatchTicket[]; bad: BatchTicket[] }> {
+// -> uncomment below one and remove below one
+// async function bisectClaimable(tickets: BatchTicket[]): Promise<{ good: BatchTicket[]; bad: BatchTicket[] }> {
+//   if (tickets.length === 0) return { good: [], bad: [] };
+//   try {
+//     await baseService.estimateClaimGas(tickets.map((t) => BigInt(t.megapotNftId!)));
+//     return { good: tickets, bad: [] };
+//   } catch {
+//     if (tickets.length === 1) return { good: [], bad: tickets };
+//     const mid = Math.ceil(tickets.length / 2);
+//     const left = await bisectClaimable(tickets.slice(0, mid));
+//     const right = await bisectClaimable(tickets.slice(mid));
+//     return { good: [...left.good, ...right.good], bad: [...left.bad, ...right.bad] };
+//   }
+// }
+async function bisectClaimable(
+  tickets: BatchTicket[],
+  winningPackedTicket: bigint // TESTING ONLY
+): Promise<{ good: BatchTicket[]; bad: BatchTicket[] }> {
   if (tickets.length === 0) return { good: [], bad: [] };
   try {
-    await baseService.estimateClaimGas(tickets.map((t) => BigInt(t.megapotNftId!)));
+    await baseService.estimateClaimGas(
+      tickets.map((t) => BigInt(t.megapotNftId!)),
+      tickets.map((t) => packTicketForTest(t.normalBalls, t.bonusBall)), // TESTING ONLY
+      winningPackedTicket,                                              // TESTING ONLY
+      TEST_NORMAL_MAX,                                                  // TESTING ONLY
+      tickets.reduce((sum, t) => sum + t.winAmount, 0n)
+    );
     return { good: tickets, bad: [] };
-  } catch {
-    if (tickets.length === 1) return { good: [], bad: tickets };
+  } catch (err) {
+    if (tickets.length === 1) {
+      // The ALERT this feeds into tells an operator to "inspect the underlying
+      // cause" but the revert reason itself was never captured anywhere —
+      // surface it here, at the single-ticket leaf, so it's actually visible.
+      const reason = (err as any)?.reason ?? (err as any)?.shortMessage ?? (err as Error)?.message ?? String(err);
+      console.error(`[harvest] estimateGas rehearsal failed for ticket ${tickets[0].id} (nftId ${tickets[0].megapotNftId}): ${reason}`);
+      return { good: [], bad: tickets };
+    }
     const mid = Math.ceil(tickets.length / 2);
-    const left = await bisectClaimable(tickets.slice(0, mid));
-    const right = await bisectClaimable(tickets.slice(mid));
+    const left = await bisectClaimable(tickets.slice(0, mid), winningPackedTicket);
+    const right = await bisectClaimable(tickets.slice(mid), winningPackedTicket);
     return { good: [...left.good, ...right.good], bad: [...left.bad, ...right.bad] };
   }
 }
@@ -140,16 +193,50 @@ async function resolveInFlightBatch(megapotId: number): Promise<boolean> {
     
     // Go to the database and fetch all the tickets that belong to this batch.
     // We need their NFT IDs to try resubmitting the claim.
+    // -> uncomment below in production
+    // const tickets = await prisma.ticket.findMany({
+    //   where: { harvestBatchId: batch.id },
+    //   select: { id: true, megapotNftId: true, winAmount: true },
+    // });
+
+    // try {
+    //   await baseService.estimateClaimGas(tickets.map((t) => BigInt(t.megapotNftId!)));
+    //   const { txHash } = await baseService.submitClaimWinnings(tickets.map((t) => BigInt(t.megapotNftId!)));
+    //   await prisma.harvestBatch.update({ where: { id: batch.id }, data: { txHash } });
+    //   console.log(`[harvest] Recovered lost batch ${batch.id} — resubmitted as ${txHash}`);
+
+    // -> remove this in production 
     const tickets = await prisma.ticket.findMany({
       where: { harvestBatchId: batch.id },
-      select: { id: true, megapotNftId: true, winAmount: true },
+      select: { id: true, megapotNftId: true, winAmount: true, normalBalls: true, bonusBall: true }, // TESTING ONLY: +normalBalls, +bonusBall
     });
 
+    // TESTING ONLY
+    const epochRowRecover = await prisma.megapotEpoch.findUniqueOrThrow({
+      where: { megapotId: batch.megapotId },
+      select: { winningNormals: true, winningBonusBall: true },
+    });
+    const winningPackedTicketRecover = packTicketForTest(epochRowRecover.winningNormals, epochRowRecover.winningBonusBall);
+    const winAmountSumRecover = tickets.reduce((sum, t) => sum + t.winAmount, 0n);
+    // END TESTING ONLY
+
     try {
-      await baseService.estimateClaimGas(tickets.map((t) => BigInt(t.megapotNftId!)));
-      const { txHash } = await baseService.submitClaimWinnings(tickets.map((t) => BigInt(t.megapotNftId!)));
+      await baseService.estimateClaimGas(
+        tickets.map((t) => BigInt(t.megapotNftId!)),
+        tickets.map((t) => packTicketForTest(t.normalBalls, t.bonusBall)), // TESTING ONLY
+        winningPackedTicketRecover, TEST_NORMAL_MAX,                       // TESTING ONLY
+        winAmountSumRecover
+      );
+      const { txHash } = await baseService.submitClaimWinnings(
+        tickets.map((t) => BigInt(t.megapotNftId!)),
+        tickets.map((t) => packTicketForTest(t.normalBalls, t.bonusBall)), // TESTING ONLY
+        winningPackedTicketRecover, TEST_NORMAL_MAX,                       // TESTING ONLY
+        winAmountSumRecover
+      );
       await prisma.harvestBatch.update({ where: { id: batch.id }, data: { txHash } });
       console.log(`[harvest] Recovered lost batch ${batch.id} — resubmitted as ${txHash}`);
+      // -> remove till here in production
+
     } catch {
       console.error(`[ALERT][harvest] Batch ${batch.id}: pre-broadcast crash but ids now unclaimable — original tx likely LANDED. Finalizing from DB amounts; verify on Basescan.`);
       await finalizeBatchSuccess(
@@ -190,6 +277,14 @@ async function resolveInFlightBatch(megapotId: number): Promise<boolean> {
 async function harvestEpochStep(epoch: { megapotId: number }): Promise<void> {
 
   if (await resolveInFlightBatch(epoch.megapotId)) return;
+
+    // -> TESTING ONLY, remove in production
+    const epochRow = await prisma.megapotEpoch.findUniqueOrThrow({
+      where: { megapotId: epoch.megapotId },
+      select: { winningNormals: true, winningBonusBall: true },
+    });
+    const winningPackedTicket = packTicketForTest(epochRow.winningNormals, epochRow.winningBonusBall);
+    // -> END TESTING ONLY, remove in production
 
   const quarantined = new Set(await redisConnection.smembers(QUARANTINE_KEY));
   const harvestable = await findHarvestableTickets(epoch.megapotId, quarantined);
@@ -255,7 +350,9 @@ async function harvestEpochStep(epoch: { megapotId: number }): Promise<void> {
   // }
 
   // Free rehearsal + bisect: never pay gas to discover a bad id.
-  const { good, bad } = await bisectClaimable(harvestable.slice(0, CHUNK_SIZE)); // * CHUNK_SIZE : 50
+  // -> uncomment in production and remove below one
+  // const { good, bad } = await bisectClaimable(harvestable.slice(0, CHUNK_SIZE)); // * CHUNK_SIZE : 50
+  const { good, bad } = await bisectClaimable(harvestable.slice(0, CHUNK_SIZE), winningPackedTicket); // -> CHUNK_SIZE : 50 — + winningPackedTicket TESTING ONLY
 
   if (bad.length > 0) {
     await redisConnection.sadd(QUARANTINE_KEY, ...bad.map((t) => t.id));
@@ -282,7 +379,16 @@ async function harvestEpochStep(epoch: { megapotId: number }): Promise<void> {
     return; // another pass got them first
   }
 
-  const { txHash } = await baseService.submitClaimWinnings(good.map((t) => BigInt(t.megapotNftId!)));
+  // -> uncomment below one and remove last txHash :
+  // const { txHash } = await baseService.submitClaimWinnings(good.map((t) => BigInt(t.megapotNftId!)));
+  const { txHash } = await baseService.submitClaimWinnings(
+    good.map((t) => BigInt(t.megapotNftId!)),
+    good.map((t) => packTicketForTest(t.normalBalls, t.bonusBall)), // TESTING ONLY
+    winningPackedTicket,                                            // TESTING ONLY
+    TEST_NORMAL_MAX,                                                // TESTING ONLY
+    amountGross
+  );
+
   await prisma.harvestBatch.update({ where: { id: batch.id }, data: { txHash } });
   console.log(`[harvest] Epoch ${epoch.megapotId}: batch ${batch.id} broadcast (${good.length} tickets, ${amountGross} units) — ${txHash}`);
 

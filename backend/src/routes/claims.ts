@@ -10,8 +10,15 @@ import { megapotService } from '../services/megapotService';
  * SECURITY CONTRACT (mirrors the program's docs — the on-chain checks are
  * only as good as what this endpoint agrees to sign):
  *   1. `amount` is derived EXCLUSIVELY from our DB (sum of the wallet's
- *      CLAIMED_ON_BASE, non-free-ticket winnings). Nothing from the request
- *      body ever reaches the voucher except the wallet address itself.
+ *      CLAIMED_ON_BASE winnings). Nothing from the request body ever reaches
+ *      the voucher except the wallet address itself.
+ *
+ * v1/v2 note: free-tier wins (isFreeTicketTier) are paid out as cash here for
+ * now, same as any other winning ticket — the "redeem as a new ticket"
+ * product flow is unbuilt, so there's nothing to gate them behind yet.
+ * isFreeTicketTier itself is left untouched on the row (still set at
+ * settlement) so a v2 redemption flow can pick these back out later without
+ * re-deriving which wins were originally free-tier.
  *   2. ONE LIVE VOUCHER PER WALLET: while a PENDING voucher exists, the same
  *      voucher is returned (idempotent) — never a second one. This is what
  *      makes double-payment impossible and makes the endpoint grief-proof:
@@ -39,21 +46,30 @@ router.get('/summary', async (req: Request, res: Response) => {
   const wallet = parseWallet(req.query.wallet);
   if (!wallet) return res.status(400).json({ error: 'Invalid or missing wallet' });
 
+  // New winnings stay invisible until their epoch's real ended_at + 10min has
+  // passed, same gate as Results/Tickets — even if settlement+harvest already
+  // finished. Historical PAID_OUT_ON_SOLANA totals aren't gated: claiming
+  // itself requires seeing a claimable amount first, which is gated below, so
+  // nothing can reach paid-out before the gate has already passed anyway.
+  const revealedEpochIds = [...(await megapotService.getRevealedEpochIds())];
+
   const [cash, freeTickets, pendingVoucher, paidOut] = await Promise.all([
+    // v1 stopgap: free-tier wins are included here (paid as cash) alongside
+    // cash-tier wins — see the file-header note. freeTickets below is now
+    // purely informational (these tickets are already counted in this sum).
     prisma.ticket.aggregate({
       _sum: { winAmount: true },
       where: {
         winStatus: 'CLAIMED_ON_BASE',
-        isFreeTicketTier: false,
         payoutClaimId: null,
-        relayOrder: { buyer: wallet },
+        relayOrder: { buyer: wallet, fulfillEpoch: { in: revealedEpochIds } },
       },
     }),
     prisma.ticket.count({
       where: {
         winStatus: 'CLAIMED_ON_BASE',
         isFreeTicketTier: true,
-        relayOrder: { buyer: wallet },
+        relayOrder: { buyer: wallet, fulfillEpoch: { in: revealedEpochIds } },
       },
     }),
     prisma.payoutClaim.findFirst({
@@ -107,16 +123,22 @@ router.post('/voucher', async (req: Request, res: Response) => {
     });
   }
 
+  // Same reveal gate as /summary — a ticket from a not-yet-revealed epoch must
+  // not become claimable here just because a user hits this endpoint directly;
+  // otherwise the amount shown on /summary and what's actually claimable could
+  // disagree.
+  const revealedEpochIds = [...(await megapotService.getRevealedEpochIds())];
+
   // Create the claim row FIRST, then bind tickets with a guarded update —
   // concurrency-safe: two racing requests cannot bind the same ticket twice.
   const claim = await prisma.payoutClaim.create({ data: { wallet } });
 
+  // v1 stopgap: bind free-tier wins into the voucher too — see file-header note.
   await prisma.ticket.updateMany({
     where: {
       winStatus: 'CLAIMED_ON_BASE',
-      isFreeTicketTier: false,
       payoutClaimId: null,
-      relayOrder: { buyer: wallet },
+      relayOrder: { buyer: wallet, fulfillEpoch: { in: revealedEpochIds } },
     },
     data: { payoutClaimId: claim.id },
   });

@@ -2,7 +2,10 @@ import { TICKET_RULES } from './constants';
 
 export interface StagedTicket {
   normals: number[];
-  bonus: number;
+  /** null while a cleared/in-progress ticket is still missing its bonus ball
+   * — only a fully-picked ticket (5 normals + 1 bonus) is ever sent on-chain,
+   * see isTicketComplete. */
+  bonus: number | null;
   isQuickPick: boolean;
 }
 
@@ -17,6 +20,12 @@ export function generateQuickPick(normalMax: number, bonusMax: number): StagedTi
     bonus: 1 + Math.floor(Math.random() * bonusMax),
     isQuickPick: true,
   };
+}
+
+/** A freshly-cleared ticket row — kept in the staged list, but with no balls
+ * picked yet, ready for manual reselection or a per-row quick-pick. */
+export function emptyTicket(): StagedTicket {
+  return { normals: [], bonus: null, isQuickPick: false };
 }
 
 /**
@@ -36,6 +45,12 @@ export function validateTicket(
   if (normals.some((n) => n < 1 || n > normalMax)) return `Numbers must be between 1 and ${normalMax}`;
   if (bonus < 1 || bonus > bonusMax) return `Bonus must be between 1 and ${bonusMax}`;
   return null;
+}
+
+/** True only for a fully-picked ticket (5 unique in-range normals + 1
+ * in-range bonus) — the only shape ever allowed to reach buyTickets(). */
+export function isTicketComplete(t: StagedTicket, normalMax: number, bonusMax: number): boolean {
+  return validateTicket(t.normals, t.bonus, normalMax, bonusMax) === null;
 }
 
 export function sortedNormals(normals: number[]): number[] {

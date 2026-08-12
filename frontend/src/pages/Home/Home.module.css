@@ -7,15 +7,16 @@
   align-items: center;
 }
 
+/* Neutral notice — the only gold on this page is the prize pool value itself. */
 .pausedBanner {
   width: 100%;
   text-align: center;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: var(--color-gold-500);
-  background: rgba(212, 175, 55, 0.08);
-  border: 1px solid rgba(212, 175, 55, 0.25);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-4);
   margin-bottom: var(--space-4);
@@ -42,13 +43,11 @@
   max-width: 460px;
   padding: var(--space-6);
   border-radius: var(--radius-xl);
-  background:
-    linear-gradient(var(--color-surface-glass), var(--color-surface-glass)) padding-box,
-    linear-gradient(160deg, rgba(212, 175, 55, 0.5), rgba(255, 255, 255, 0.04) 40%, rgba(168, 85, 247, 0.35)) border-box;
+  background: var(--color-surface-glass);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid transparent;
-  box-shadow: var(--shadow-card), 0 0 60px rgba(212, 175, 55, 0.06);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-card);
 }
 
 .stepperRow {
@@ -81,14 +80,19 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.chip:hover {
+.chip:hover:not(:disabled) {
   border-color: var(--color-border-strong);
   color: var(--color-text);
 }
 
+.chip:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .chipActive {
-  color: #1a1204;
-  background: var(--gradient-gold);
+  color: #0a0a0c;
+  background: #fff;
   border-color: transparent;
 }
 
@@ -96,7 +100,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-2);
 }
 
 .stepper > button:first-child,
@@ -113,116 +117,54 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.stepper > button:first-child:hover,
-.stepper > button:nth-child(3):hover {
+.stepper > button:first-child:hover:not(:disabled),
+.stepper > button:nth-child(3):hover:not(:disabled) {
   color: var(--color-text);
   border-color: var(--color-border-strong);
 }
 
+.stepper > button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Explicit box so it never falls back to the browser's default number-input
+   chrome (that default outline/border is what showed up as an unstyled
+   "purple box" on focus in some browsers). Plain type="text" + inputMode —
+   see Home.tsx for why: a real type="number" input concatenates keystrokes
+   onto its old value instead of replacing it without extra handling. */
 .stepper input {
-  width: 44px;
+  width: 56px;
+  height: 36px;
   text-align: center;
   font-size: 16px;
   font-weight: 800;
   color: var(--color-text);
-}
-
-.addQuickButton {
-  flex: 1;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  background: rgba(212, 175, 55, 0.1);
-  border: 1px solid rgba(212, 175, 55, 0.3);
-  color: var(--color-gold-500);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  transition: background var(--duration-fast) var(--ease-out);
-}
-
-.addQuickButton:hover {
-  background: rgba(212, 175, 55, 0.18);
-}
-
-.pickerToggle {
-  width: 100%;
-  text-align: center;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--color-text-dim);
-  padding: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.pickerToggle:hover {
-  color: var(--color-text);
-}
-
-.picker {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  margin-bottom: var(--space-4);
-  border-radius: var(--radius-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  animation: fadeIn var(--duration-base) var(--ease-out) both;
-}
-
-.pickerGroup {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.pickerHeader {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-dim);
-}
-
-.pickerCount {
-  color: var(--color-gold-500);
-}
-
-.ballGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
-  gap: 6px;
-}
-
-.addManualButton {
-  width: 100%;
-  padding: var(--space-3);
   border-radius: var(--radius-sm);
-  background: rgba(212, 175, 55, 0.1);
-  border: 1px solid rgba(212, 175, 55, 0.3);
-  color: var(--color-gold-500);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.addManualButton:disabled {
-  opacity: 0.4;
-  color: var(--color-text-dim);
-  border-color: var(--color-border);
-  background: transparent;
+.stepper input:focus {
+  border-color: var(--color-border-strong);
+}
+
+.stepperHint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-faint);
+  margin: 0 0 var(--space-4);
+  text-align: center;
 }
 
 .staged {
   margin-bottom: var(--space-4);
-  padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
+  overflow: hidden;
 }
 
 .stagedHeader {
@@ -234,7 +176,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-text-dim);
-  margin-bottom: var(--space-2);
+  padding: var(--space-3);
 }
 
 .clearAll {
@@ -246,115 +188,93 @@
 .stagedList {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   max-height: 220px;
   overflow-y: auto;
+  border-top: 1px solid var(--color-border);
 }
 
 .stagedRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-raised);
+  gap: var(--space-2);
+  padding: 6px 10px;
+}
+
+.stagedRow:not(:first-child) {
+  border-top: 1px solid var(--color-border);
 }
 
 .stagedBalls {
   display: flex;
+  align-items: center;
   gap: 3px;
+  flex-wrap: wrap;
 }
 
-.removeTicket {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  color: var(--color-danger);
-  font-size: 14px;
-  line-height: 1;
+.incompleteTag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-text-faint);
+  margin-left: 4px;
 }
 
+.editTicketButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.editTicketButton:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.editorToggle {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.editorToggle:hover {
+  color: var(--color-text);
+}
+
+/* Primary CTA — plain white, matching the same treatment already used for
+   the app's other primary actions (Tickets page's claim/check buttons). */
 .buyButton {
   width: 100%;
   padding: var(--space-4);
   border-radius: var(--radius-md);
-  background: var(--gradient-gold);
-  background-size: 200% 100%;
-  color: #1a1204;
+  background: #fff;
+  color: #0a0a0a;
   font-size: 13px;
   font-weight: 900;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  box-shadow: 0 0 28px rgba(255, 255, 255, 0.3);
   transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
 }
 
 .buyButton:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-gold-glow);
 }
 
 .buyButton:disabled {
   opacity: 0.4;
-}
-
-
-
-.jackpottext {
-  position: relative;
-  font-family: 'Arial Black', Impact, sans-serif;
-  font-size: 8rem;
-  font-weight: 900;
-  letter-spacing: -3px; /* Pulls letters closer together */
-  margin: 0;
-  
-  /* 1. Stacked 3D Shadows (Gold -> Cyan -> Dark Blue) */
-  /* Shadows are offset to the bottom-left (-x, +y) */
-  color: transparent; /* Hide the original text */
-  text-shadow: 
-    /* Gold Edge */
-    -1px 1px 0 #ffe382,
-    -2px 2px 0 #d4af37,
-    -3px 3px 0 #9e7a15,
-    
-    /* Cyan / Light Blue Mid-layer */
-    -4px 4px 0 #00ffff,
-    -5px 5px 0 #00bfff,
-    -6px 6px 0 #0099ff,
-    -7px 7px 0 #0077ff,
-    
-    /* Dark Blue Deep Layer */
-    -8px 8px 0 #0000cc,
-    -9px 9px 0 #0000aa,
-    -10px 10px 0 #000088,
-    -11px 11px 0 #000066,
-    -12px 12px 0 #000044,
-    
-    /* Soft Drop Shadow at the very bottom */
-    -18px 18px 15px rgba(0, 0, 0, 0.8);
-}
-
-/* 2. The Silver Gradient Front Face */
-.jackpottext::before {
-  content: attr(data-text);
-  position: absolute;
-  left: 0;
-  top: 0;
-  
-  /* Silver/White metallic gradient */
-  background: linear-gradient(
-    to bottom, 
-    #ffffff 0%, 
-    #f0f0f0 30%, 
-    #c0c0c0 50%, 
-    #e8e8e8 70%, 
-    #a0a0a0 100%
-  );
-  
-  /* Clip the background to the text shape */
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  
-  /* Slight inner shadow trick for the rounded top edge */
-  filter: drop-shadow(0px -1px 1px rgba(255,255,255,0.8));
+  box-shadow: none;
 }

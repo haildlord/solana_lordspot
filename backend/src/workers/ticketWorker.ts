@@ -35,9 +35,19 @@ const ticketWorker = new Worker(
         console.log(`[WORKER:ticket-ingestion] Parsing Solana logs to extract Anchor events...`);
         const events = [...eventParser.parseLogs(logs)];
 
-        const purchaseEvent = events.find((e) => isTicketPurchaseEvent(e.name));
+        // A single transaction can contain MULTIPLE BuyTicket instructions —
+        // buyTickets.ts packs up to 2 per transaction to stay under Solana's
+        // 1232-byte tx size limit — and each one emits its own
+        // TicketPurchaseEvent. Collect ALL of them: taking only the first
+        // (the old behavior) silently discarded every instruction after it —
+        // tickets that were genuinely bought and paid for on-chain, just
+        // never recorded here. logs are already chain-verified by
+        // webhookIngestWorker (re-fetched from our own RPC, meta.err checked)
+        // before reaching this job, so every event found here corresponds to
+        // a real, already-executed, already-paid-for purchase.
+        const purchaseEvents = events.filter((e) => isTicketPurchaseEvent(e.name));
 
-        if (!purchaseEvent) {
+        if (purchaseEvents.length === 0) {
             console.error(`[WORKER:ticket-ingestion] CRITICAL: No TicketPurchaseEvent in confirmed tx ${signature} — user paid, ticket undecodable.`);
             await prisma.webhookInbox.update({
               where: { signature },
@@ -46,18 +56,39 @@ const ticketWorker = new Worker(
             throw new UnrecoverableError(`No TicketPurchaseEvent in logs for ${signature}`);
           }
 
-        console.log(`[WORKER:ticket-ingestion] Successfully extracted TicketPurchaseEvent. Decoding event data...`);
+        console.log(`[WORKER:ticket-ingestion] Found ${purchaseEvents.length} TicketPurchaseEvent(s) in tx. Decoding and merging...`);
 
-        // Anchor decodes event fields as snake_case (matches on-chain struct)
-        const eventData = purchaseEvent.data as Record<string, any>;
-        const {
-            buyer,
-            amount_paid,
-            tickets_bought,
-            tickets_data,
-            timestamp,
-            epoch,
-        } = eventData;
+        // Anchor decodes event fields as snake_case (matches on-chain struct).
+        // buyer/epoch/timestamp are identical across every event in one
+        // transaction by construction — one signer, one atomic Clock reading
+        // — so they're taken from the first event; amount_paid/tickets_bought/
+        // tickets_data are summed/concatenated across all of them.
+        const first = purchaseEvents[0].data as Record<string, any>;
+        const { buyer, timestamp, epoch } = first;
+
+        let amount_paid = BigInt(0);
+        let tickets_bought = 0;
+        let tickets_data: { bonus_ball: number; normal_ball: number[] }[] = [];
+
+        for (const ev of purchaseEvents) {
+            const d = ev.data as Record<string, any>;
+
+            // Sanity guard against a structurally-impossible-in-practice case
+            // (would mean two different buyers' events got merged) — refuse
+            // to process rather than silently mis-attribute tickets.
+            if (d.buyer.toBase58() !== buyer.toBase58() || d.epoch.toNumber() !== epoch.toNumber()) {
+                console.error(`[WORKER:ticket-ingestion] CRITICAL: TicketPurchaseEvents within tx ${signature} disagree on buyer/epoch — refusing to merge, needs manual review.`);
+                await prisma.webhookInbox.update({
+                  where: { signature },
+                  data: { status: 'FAILED', error: 'TicketPurchaseEvents in one tx disagree on buyer/epoch', processedAt: new Date() },
+                });
+                throw new UnrecoverableError(`Inconsistent TicketPurchaseEvents in tx ${signature}`);
+            }
+
+            amount_paid += BigInt(d.amount_paid.toString());
+            tickets_bought += d.tickets_bought;
+            tickets_data = tickets_data.concat(d.tickets_data);
+        }
 
         const hash = id(signature);
         console.log(`[WORKER:ticket-ingestion] Generated unique relay hash: ${hash}`);
@@ -71,7 +102,7 @@ const ticketWorker = new Worker(
                     signature,
                     buyer: buyer.toBase58(),
                     purchaseEpoch: epoch.toNumber(),
-                    amountUsdc: BigInt(amount_paid.toString()),
+                    amountUsdc: amount_paid,
                     ticketCount: tickets_bought,
                     lastBought: new Date(timestamp.toNumber() * 1000),
                     status: "QUEUED",

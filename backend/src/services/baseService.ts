@@ -23,6 +23,22 @@ class BaseService {
   private vault: Contract;
   private usdc: Contract;
 
+  // Gas limit formula, fit from real observed estimateGas numbers (not a guess):
+  // 15 tickets raw-estimated at 12,233,182, 20 tickets at ~16,018,000 (avg of two
+  // real runs). Linear fit from those two points: fixed overhead ~878,728,
+  // ~756,964 gas/ticket. 15 tickets × that fit + 20% headroom = 14,679,818 —
+  // the EXACT number that broadcast successfully for real (confirmed, not
+  // theoretical). BASE_GAS_OVERHEAD/GAS_PER_TICKET below are rounded to sit
+  // just under that proven-good ceiling, not just under EIP-7825's theoretical
+  // 16,777,216-gas cap — the real provider-enforced ceiling for eth_sendRawTransaction
+  // is confirmed somewhere between 14,679,818 (works) and 19,157,895 (rejected,
+  // "gas limit too high"), i.e. tighter than the theoretical wall, and unconfirmed
+  // in between — so anything above the proven-good number is guessing, even if
+  // it's still under 16,777,216. At the 15-ticket chunk cap (config.relay.baseTicketChunkSize):
+  // 1_200_000 + 15 * 880_000 = 14,400,000 — under the proven 14,679,818, not just under the theoretical wall.
+  private static readonly BASE_GAS_OVERHEAD = 1_200_000n;
+  private static readonly GAS_PER_TICKET = 880_000n;
+
   // ---- Nonce lane ----
   // Nonces must be sequential, not sequentially *confirmed*. We serialize only
   // {assign nonce → sign → broadcast} (~100ms), never the mining wait — that is
@@ -109,9 +125,15 @@ class BaseService {
 
   /**
    * Broadcasts buyTickets and returns IMMEDIATELY after the tx enters the mempool.
-   * estimateGas doubles as a free pre-broadcast simulation: reverts
-   * (OrderAlreadyProcessed, EnforcedPause, bad tickets) surface here before any
-   * gas is spent. Errors bubble up raw — callers classify via classifyError().
+   * No estimateGas pre-flight — gasLimit is a hardcoded, generous formula instead
+   * (see BASE_GAS_OVERHEAD/GAS_PER_TICKET above). Deliberate tradeoff: this drops
+   * the free "would this revert?" simulation estimateGas used to provide (paused /
+   * already-processed / bad tickets), on the reasoning that pause state is already
+   * checked server-side before this is ever called, and ticket data is already
+   * validated before it reaches Base. A genuinely doomed transaction now costs
+   * real gas to discover instead of failing for free — acceptable given the
+   * above, revisit if that stops being true. Errors still bubble up raw —
+   * callers classify via classifyError().
    */
   public async submitBuyTickets(params: {
     orderId: string;
@@ -122,15 +144,8 @@ class BaseService {
     const referrers = [config.base.rewardWallet];
     const referralSplit = [config.base.referralSplit];
 
-    const estimated: bigint = await this.vault.buyTickets.estimateGas(
-      params.orderId,
-      params.tickets,
-      referrers,
-      referralSplit,
-      params.source
-    );
-    
-    const gasLimit = (estimated * 12n) / 10n; // 20% headroom
+    const gasLimit =
+      BaseService.BASE_GAS_OVERHEAD + BaseService.GAS_PER_TICKET * BigInt(params.tickets.length);
 
     return this.withNonceLane(async () => {
 
@@ -176,30 +191,72 @@ class BaseService {
    * loop is all-or-nothing. The harvest worker uses this to bisect out bad ids
    * before spending real gas.
    */
-  public async estimateClaimGas(nftIds: bigint[]): Promise<bigint> {
-    return BigInt(await this.vault.claimWinnings.estimateGas(nftIds));
-  }
+  // -> Uncomment below code in production & use the below one :
+  // public async estimateClaimGas(nftIds: bigint[]): Promise<bigint> {
+  //   return BigInt(await this.vault.claimWinnings.estimateGas(nftIds));
+  // }
+    public async estimateClaimGas(
+      nftIds: bigint[],
+      packedTickets: bigint[],
+      winningPackedTicket: bigint,
+      winningBallMax: bigint,
+      winningAmount: bigint
+    ): Promise<bigint> {
+      return BigInt(await this.vault.claimWinnings.estimateGas(nftIds, packedTickets, winningPackedTicket, winningBallMax, winningAmount));
+    }
 
   /**
    * Broadcasts vault.claimWinnings(nftIds) on the shared nonce lane and
    * returns as soon as it hits the mempool — the harvest worker owns receipt
    * polling (one in-flight batch at a time, so no confirmer split needed).
    */
-  public async submitClaimWinnings(nftIds: bigint[]): Promise<{ txHash: string; nonce: number }> {
+  // -> Uncomment this as well & remove below one
+  // public async submitClaimWinnings(nftIds: bigint[]): Promise<{ txHash: string; nonce: number }> {
 
-    const estimated: bigint = await this.vault.claimWinnings.estimateGas(nftIds);
+  //   const estimated: bigint = await this.vault.claimWinnings.estimateGas(nftIds);
+  //   const gasLimit = (estimated * 12n) / 10n; // 20% headroom
+
+  //   return this.withNonceLane(async () => {
+      
+  //     if (this.nextNonce === null) {
+  //       this.nextNonce = await this.provider.getTransactionCount(this.wallet.address, 'pending');
+  //     }
+
+  //     const nonce = this.nextNonce;
+
+  //     try {
+  //       const tx = await this.vault.claimWinnings(nftIds, { gasLimit, nonce });
+  //       this.nextNonce = nonce + 1;
+  //       console.log(`[SERVICE:base] Harvest broadcast: ${nftIds.length} ticket(s), nonce=${nonce}, tx=${tx.hash}`);
+  //       return { txHash: tx.hash as string, nonce };
+  //     } catch (err) {
+  //       this.resetNonceLane();
+  //       throw err;
+  //     }
+  //   });
+  // }
+
+  public async submitClaimWinnings(
+    nftIds: bigint[],
+    packedTickets: bigint[],
+    winningPackedTicket: bigint,
+    winningBallMax: bigint,
+    winningAmount: bigint
+  ): Promise<{ txHash: string; nonce: number }> {
+  
+    const estimated: bigint = await this.vault.claimWinnings.estimateGas(nftIds, packedTickets, winningPackedTicket, winningBallMax, winningAmount);
     const gasLimit = (estimated * 12n) / 10n; // 20% headroom
-
+  
     return this.withNonceLane(async () => {
       
       if (this.nextNonce === null) {
         this.nextNonce = await this.provider.getTransactionCount(this.wallet.address, 'pending');
       }
-
+  
       const nonce = this.nextNonce;
-
+  
       try {
-        const tx = await this.vault.claimWinnings(nftIds, { gasLimit, nonce });
+        const tx = await this.vault.claimWinnings(nftIds, packedTickets, winningPackedTicket, winningBallMax, winningAmount, { gasLimit, nonce });
         this.nextNonce = nonce + 1;
         console.log(`[SERVICE:base] Harvest broadcast: ${nftIds.length} ticket(s), nonce=${nonce}, tx=${tx.hash}`);
         return { txHash: tx.hash as string, nonce };
@@ -207,9 +264,8 @@ class BaseService {
         this.resetNonceLane();
         throw err;
       }
-
+  
     });
-    
   }
 
   /** Total USDC pulled into the vault, from OUR WinningsHarvested event. Null if absent. */
@@ -246,8 +302,18 @@ class BaseService {
       } catch { /* unknown selector (e.g. Megapot's own errors) — fall through */ }
     }
 
-    // Fallback: string matching on whatever ethers surfaced.
-    const msg: string = err?.reason ?? err?.shortMessage ?? err?.message ?? String(err);
+    // Fallback: string matching on whatever ethers surfaced. Checks the nested
+    // provider error message too (err.info.error.message / err.error.message) —
+    // ethers sometimes wraps a real, specific provider error (e.g. "gas limit
+    // too high") in a generic top-level message like "could not coalesce error",
+    // and the useful text only survives one level down.
+    const msg: string =
+      err?.reason ??
+      err?.shortMessage ??
+      err?.info?.error?.message ??
+      err?.error?.message ??
+      err?.message ??
+      String(err);
     if (msg.includes('OrderAlreadyProcessed')) return { kind: 'already_processed' };
     if (msg.includes('EnforcedPause')) return { kind: 'paused', reason: msg };
     if (PERMANENT_ERROR_PATTERNS.test(msg)) return { kind: 'permanent', reason: msg };

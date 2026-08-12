@@ -14,6 +14,11 @@ async function tick(): Promise<void> {
     // Durable epoch-transition heartbeat: derived from the Redis-cached round,
     // so a crashed/redeployed API process can never lose the transition timer.
     await megapotService.checkEpochTransition();
+~
+    // Catches any pause/unpause that happened outside this backend (manual
+    // scripts, anchor migrate, etc.) — chain is truth, cache just mirrors it.
+    await megapotService.syncPauseStateFromChain();
+
     // Ticket win/loss grading for settled epochs. Also runs in the worker
     // process — concurrent execution is safe (DRAW_PENDING-guarded updates).
     await runSettlementTick();

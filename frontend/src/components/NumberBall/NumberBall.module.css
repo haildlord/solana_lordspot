@@ -5,24 +5,27 @@
   border-radius: 50%;
   font-weight: 800;
   flex-shrink: 0;
-  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 
 .xs { width: 22px; height: 22px; font-size: 9px; }
 .sm { width: 30px; height: 30px; font-size: 11px; }
 .md { width: 38px; height: 38px; font-size: 13px; }
 
+/* Normal ball: white, always — the neutral default across the whole app. */
 .normal {
-  background: linear-gradient(160deg, #1a1a1f, #0c0c0f);
-  border: 1px solid var(--color-border-strong);
-  color: var(--color-text);
+  background: #f5f5f7;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: #0a0a0c;
 }
 
+/* Bonus ball: black, always — no gold. Needs a visible border since the page
+   background is itself near-black. */
 .bonus {
-  background: var(--gradient-gold);
-  color: #1a1204;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 0 10px rgba(212, 175, 55, 0.35);
+  background: #0c0c0f;
+  border: 1.5px solid var(--color-border-strong);
+  color: var(--color-text);
 }
 
 .dim {
@@ -38,14 +41,32 @@
   transform: translateY(-2px);
 }
 
-.selected.normal {
-  background: #fff;
-  color: #0a0a0a;
-  border-color: #fff;
-  transform: translateY(-1px);
+/* Actively being picked (Home's ticket editor grid only) — a violet ring,
+   clearly different from both the plain white/black defaults and the
+   green/purple "winning" glow below, since selected+winning never coexist
+   in the same view. */
+.selected.normal,
+.selected.bonus {
+  border-color: var(--color-violet-300);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.22), var(--shadow-violet-glow);
+  transform: translateY(-1px) scale(1.05);
 }
 
 .selected.bonus {
-  box-shadow: 0 0 16px rgba(212, 175, 55, 0.6);
+  background: #17171c;
+}
+
+/* Matched the drawn numbers (Tickets / Results). Normal-ball match glows
+   green; the bonus-ball match glows purple — kept visually distinct from
+   `.selected` (violet) so the two states are never confusable. */
+.winning.normal {
+  border-color: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-bg), 0 0 14px rgba(52, 211, 153, 0.55);
+  transform: translateY(-1px) scale(1.05);
+}
+
+.winning.bonus {
+  border-color: var(--color-violet-500);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.22), 0 0 14px rgba(168, 85, 247, 0.6);
   transform: translateY(-1px) scale(1.05);
 }

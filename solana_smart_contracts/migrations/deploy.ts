@@ -47,9 +47,9 @@ module.exports = async function (provider: anchor.AnchorProvider) {
 
   // Game rules configuration parameters
   const NORMAL_MAX = 30; 
-  const BONUS_MAX = 10;
+  const BONUS_MAX = 12;
   const TICKET_PRICE = new anchor.BN(1_000_000); // $1.00 USDC (6 decimals)
-  const INIT_EPOCH = new anchor.BN(112);
+  const INIT_EPOCH = new anchor.BN(0);
   console.log("--------------------------------------------------");
 
 

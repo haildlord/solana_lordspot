@@ -40,10 +40,25 @@ class MegapotService {
   private readonly CACHE_KEY = 'megapot-active_round';
   private readonly PAUSE_KEY = 'megapot-is_paused';
   private readonly TRANSITION_LOCK_KEY = 'megapot-transition_lock';
-  private readonly PRE_EMPTIVE_BUFFER_MS = 30 * 1000;
+  private readonly PRE_EMPTIVE_BUFFER_MS = (5 * 60 + 15) * 1000; // -> 5 min + 15 sec = 315,000 ms 
+  // (2 * 60 + 15) * 1000;
 
   private toBigInt(amount: TokenAmount): bigint {
     return BigInt(amount.amount);
+  }
+
+  /**
+   * Megapot's 10% referral win-share, applied the same way everywhere a gross
+   * payout amount gets reduced (prize tiers, topPrizeAmount, the on-chain
+   * jackpot read): floor the SHARE, then subtract from gross. This is the
+   * claim contract's own integer math — NOT floor(gross * 0.9), which
+   * truncates at a different point and can be off by 1 unit (e.g.
+   * gross=1111112 → correct net=1000001, floor(gross*0.9)=1000000). Confirmed
+   * against Megapot's own recorded value.
+   */
+  private applyReferralShare(gross: bigint): bigint {
+    const share = (gross * REFERRAL_WIN_SHARE_BPS) / 10_000n;
+    return gross - share;
   }
 
   /**
@@ -70,8 +85,7 @@ class MegapotService {
 
     const gross = BigInt(payouts[JACKPOT_TIER_INDEX] ?? 0n);
 
-    const share = (gross * REFERRAL_WIN_SHARE_BPS) / 10_000n;
-    const net = gross - share;
+    const net = this.applyReferralShare(gross);
 
     // "0 decimals": floor to a whole dollar, expressed back in 6-decimal
     // units (…000000) so every existing consumer (formatUsdc, the frontend's
@@ -153,7 +167,7 @@ class MegapotService {
       normals_max: data.ball_pool.normals_max,
       bonusball_max: data.ball_pool.bonusball_max,
       started_at: data.started_at,
-      ended_at: data.ended_at,
+      ended_at: new Date(new Date(data.ended_at).getTime() + 5 * 60 * 1000).toISOString(), // -> here making it +5 mins
       prize_pool: {
         amount: String(data.prize_pool.amount),
         decimals: data.prize_pool.decimals ?? 6,
@@ -165,7 +179,10 @@ class MegapotService {
       ticket_count: data.ticket_count ?? 0,
       unique_participants: data.unique_participants ?? 0, 
     };
+
   }
+
+
 
   private async rateLimit(): Promise<void> {
     const now = Date.now();
@@ -233,6 +250,7 @@ class MegapotService {
   }
 
   private async syncProtocolState(data: MegapotRoundResponse, isPaused: boolean) {
+
     const currentEpochId = parseInt(String(data.id), 10);
     console.log(`[DATABASE] Syncing ProtocolState singleton for Epoch ID: ${currentEpochId} (Paused: ${isPaused})`);
 
@@ -241,39 +259,43 @@ class MegapotService {
 
     // 1. Fetch On-Chain Jackpot USDC (with fallback)
     let prizePoolAmount: bigint;
+
     try {
-      // -> uncomment it : prizePoolAmount = await this.fetchOnChainJackpotUsdc(currentEpochId); 
-      prizePoolAmount = 200_000_000_000n;
+      prizePoolAmount = await this.fetchOnChainJackpotUsdc(currentEpochId); 
+      // -> prizePoolAmount = 200_000_000_000n;
     } catch (err) {
       console.error(`[ALERT][SERVICE:megapot] On-chain jackpot read failed for Epoch ${currentEpochId} — retaining fallback.`, err);
       prizePoolAmount = existingState?.prizePoolAmount ?? this.toBigInt(data.prize_pool);
     }
 
-    // 2. Fetch Dune Analytics Data (with fallback)
-    let jackpotsWon: number = existingState?.jackpotsWon ?? 0;
-    let prizesWon: bigint = existingState?.prizesWon ?? BigInt(0);
+    // -> uncomment it after making sure it runs just once a day or else dune api credit limit is gonna be done
+    let jackpotsWon: number = 19;
+    let prizesWon: bigint = BigInt(86000);
+    // // 2. Fetch Dune Analytics Data (with fallback)
+    // let jackpotsWon: number = existingState?.jackpotsWon ?? 0;
+    // let prizesWon: bigint = existingState?.prizesWon ?? BigInt(0);
 
-    const duneRow = await this.fetchDuneMetrics();
+    // const duneRow = await this.fetchDuneMetrics();
 
-    if (duneRow) {
-      // Safely parse Dune string literals to native numbers and BigInts
-      if (duneRow.jackpots_won !== undefined && duneRow.jackpots_won !== null) {
-        jackpotsWon = Number(duneRow.jackpots_won);
-      }
-      if (duneRow.prizes_won !== undefined && duneRow.prizes_won !== null) {
-        prizesWon = BigInt(duneRow.prizes_won);
-      }
+    // if (duneRow) {
+    //   // Safely parse Dune string literals to native numbers and BigInts
+    //   if (duneRow.jackpots_won !== undefined && duneRow.jackpots_won !== null) {
+    //     jackpotsWon = Number(duneRow.jackpots_won);
+    //   }
+    //   if (duneRow.prizes_won !== undefined && duneRow.prizes_won !== null) {
+    //     prizesWon = BigInt(duneRow.prizes_won);
+    //   }
 
-      console.log(`[SERVICE:dune] Successfully synced metrics: Jackpots Won = ${jackpotsWon}, Prizes Won = ${prizesWon.toString()}`);
-    } else {
-      console.warn(`[SERVICE:dune] Retaining previous singleton stats: Jackpots Won = ${jackpotsWon}, Prizes Won = ${prizesWon.toString()}`);
-    }
+    //   console.log(`[SERVICE:dune] Successfully synced metrics: Jackpots Won = ${jackpotsWon}, Prizes Won = ${prizesWon.toString()}`);
+    // } else {
+    //   console.warn(`[SERVICE:dune] Retaining previous singleton stats: Jackpots Won = ${jackpotsWon}, Prizes Won = ${prizesWon.toString()}`);
+    // }
 
     // 3. Atomic Database Upsert
     const updatePayload = {
       isPaused,
       currentEpochId,
-      endedAt: new Date(data.ended_at),
+      endedAt: new Date(new Date(data.ended_at).getTime() + 5 * 60 * 1000), // -> added +5 Mins
       maxNormalBall: data.ball_pool.normals_max,
       maxBonusBall: data.ball_pool.bonusball_max,
       prizePoolAmount,
@@ -308,7 +330,9 @@ class MegapotService {
   /**
    * Processes the raw tiers to:
    * 1. Remove Tier 0 (0 normals, false bonus)
-   * 2. Apply a strict 10% reduction to all payout amounts (using native BigInt math to prevent precision loss)
+   * 2. Apply the 10% referral win-share reduction to all payout amounts, via
+   *    applyReferralShare (floor the SHARE, then subtract — matches Megapot's
+   *    own recorded net value; floor(gross*0.9) can be off by 1 unit)
    * 3. Calculate the total sum paid out across all valid tiers
    * 4. Extract the exact Jackpot value (Tier 11)
    */
@@ -329,11 +353,9 @@ class MegapotService {
       // 1. Skip Tier 0 (No normals, no bonus)
       if (tier.tier_id === 0) continue;
 
-      // 2. Apply 10% reduction. 
-      // We multiply by 90 and divide by 100 using native BigInt.
-      // This naturally truncates decimals without using Math.floor/ceil, keeping exact precision for USDC.
+      // 2. Apply the 10% referral win-share reduction — see applyReferralShare.
       const rawAmount = BigInt(tier.payout.amount);
-      const reducedAmount = (rawAmount * 90n) / 100n;
+      const reducedAmount = this.applyReferralShare(rawAmount);
 
       // 3. Add to total sum (Amount * Ticket Count)
       const tierTotal = rawAmount * BigInt(tier.ticket_count);
@@ -368,13 +390,17 @@ class MegapotService {
     const normalMax = data.ball_pool?.normals_max ?? null;
     const bonusMax = data.ball_pool?.bonusball_max ?? null;
     const drawnAt = data.settled_at ? new Date(data.settled_at) : null;
+    const endedAt = data.ended_at
+    ? new Date(new Date(data.ended_at).getTime() + this.EPOCH_END_UI_BUFFER_MS)
+    : null;
 
     // Process tiers: calculate totals and format the exact JSON we want to store
     const { totalPaidAmount, jackpot, formattedPrizeTiers } = this.processPrizeTiers(data.prize_tiers);
 
-    // Also apply the 10% reduction to topPrizeAmount so it matches the jackpot logic
+    // Also apply the same referral-share reduction to topPrizeAmount so it
+    // matches the jackpot/tier logic exactly (see applyReferralShare).
     const rawTopPrize = this.toBigInt(data.top_prize_amount);
-    const topPrizeAmount = (rawTopPrize * 90n) / 100n;
+    const topPrizeAmount = this.applyReferralShare(rawTopPrize);
 
     const upsertPayload = {
       lordsPotTicketCount: 20,
@@ -397,6 +423,7 @@ class MegapotService {
       normalMax,
       bonusMax,
       drawnAt,
+      endedAt,
     };
 
     await prisma.megapotEpoch.upsert({
@@ -504,6 +531,59 @@ class MegapotService {
     return (await prisma.megapotEpoch.count({ where: { megapotId } })) > 0;
   }
 
+  /**
+   * The UI-facing buffer baked directly into MegapotEpoch.endedAt at write
+   * time (see upsertSettledEpoch) — the stored value is already real
+   * ended_at + this buffer, not the raw round-end time. Every reveal-gate
+   * below therefore just compares `endedAt` straight against `now`, no
+   * separate buffer arithmetic layered on top (that used to double-count
+   * the buffer — endedAt was already padded, then another REVEAL_BUFFER_MS
+   * was subtracted again on top when checking it, so reveal actually only
+   * ever fired at ended_at + 20min instead of +10min).
+   *
+   * Must stay in sync with the live round's own ended_at padding above (the
+   * `// ->` +5min lines in parseRoundState/syncProtocolState) — otherwise a
+   * ticket's countdown target jumps the moment its epoch settles, since the
+   * live nextDrawAt and this value would no longer agree. Currently 2min for
+   * fast local testing; flip to 10min alongside those two lines before a
+   * real deploy.
+   */
+  private readonly EPOCH_END_UI_BUFFER_MS = 5 * 60 * 1000;
+
+  /**
+   * Epochs whose padded endedAt hasn't passed yet stay fully hidden from
+   * every results/tickets/claims surface — even though settlement and harvest
+   * may already be done in the background. Keeps "everything updates at once"
+   * a real, honest promise instead of results trickling in as each backend
+   * step happens to finish. Epochs with no endedAt (rows written before this
+   * field existed) are treated as already revealed, not permanently hidden.
+   */
+  public async getRevealedEpochIds(): Promise<Set<number>> {
+    const rows = await prisma.megapotEpoch.findMany({
+      where: { OR: [{ endedAt: null }, { endedAt: { lte: new Date() } }] },
+      select: { megapotId: true },
+    });
+    return new Set(rows.map((r) => r.megapotId));
+  }
+
+  /** Same gate as getRevealedEpochIds(), as a Prisma where-fragment — for
+   * routes that query MegapotEpoch directly rather than needing the id set. */
+  public revealedEpochWhere() {
+    return { OR: [{ endedAt: null }, { endedAt: { lte: new Date() } }] };
+  }
+
+  /** Same gate, checked for one specific epoch — for routes keyed by megapotId
+   * (e.g. a single epoch's winner breakdown) rather than listing/aggregating. */
+  public async isEpochRevealed(megapotId: number): Promise<boolean> {
+    const epoch = await prisma.megapotEpoch.findUnique({
+      where: { megapotId },
+      select: { endedAt: true },
+    });
+    if (!epoch) return false;
+    if (!epoch.endedAt) return true;
+    return epoch.endedAt.getTime() <= Date.now();
+  }
+
   public async getRoundState(): Promise<RoundState | null> {
     const data = await redisConnection.get(this.CACHE_KEY);
     if (!data) return null;
@@ -521,7 +601,7 @@ class MegapotService {
 
   public isRoundLocked(round: RoundState): boolean {
     const endMs = new Date(round.ended_at).getTime();
-    return Date.now() >= endMs - this.PRE_EMPTIVE_BUFFER_MS;
+    return Date.now() >= endMs - this.PRE_EMPTIVE_BUFFER_MS; // * 10 mins + 15 secs
   }
 
   public async isProtocolPaused(): Promise<boolean> {
@@ -542,6 +622,18 @@ class MegapotService {
       update: { isPaused: paused },
     });
   }
+
+  /** Self-healing half of the pause cache: re-derives it from the real on-chain flag,
+ * so ANY out-of-band pause/unpause (anchor migrate, a manual script, anything that
+ * isn't this backend's own transitionLoop) can't leave Redis/Postgres stale. */
+public async syncPauseStateFromChain(): Promise<void> {
+  const onChain = await solanaService.getOnChainState();
+  const cached = await this.isProtocolPaused();
+  if (onChain.isLordsPotPaused !== cached) {
+    console.warn(`[SERVICE:megapot] Pause state drift detected — chain=${onChain.isLordsPotPaused}, cache=${cached}. Resyncing.`);
+    await this.setPaused(onChain.isLordsPotPaused);
+  }
+}
 
   /**
    * Crash-proof entry point for the transition. transitionLoop() can throw
@@ -575,7 +667,7 @@ class MegapotService {
   public async checkEpochTransition(): Promise<void> {
     const round = await this.getRoundState();
     if (!round) return;
-    if (Date.now() >= new Date(round.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS) {
+    if (Date.now() >= new Date(round.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS) { // * 10 mins + 15 secs
       console.log(`[CRON:heartbeat] Epoch ${round.id} is due — ensuring transition runs.`);
       await this.safeTransition();
     }
@@ -596,10 +688,15 @@ class MegapotService {
 
     if (
       current &&
-      Date.now() < new Date(current.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS
+      Date.now() < new Date(current.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS // * 10 mins + 15 secs
     ) {
       console.log(`[CRON:transition] Cached round ${current.id} is not due yet — nothing to do.`);
       return true;
+    }
+
+    if (!current) {
+      console.error(`[CACHE] Cannot proceed with transition: No active round found in cache.`);
+      return false;
     }
 
     // Distributed lock: API timer and cron heartbeat may both fire — exactly
@@ -614,7 +711,6 @@ class MegapotService {
     }
 
     try {
-
       try {
         console.log(`[CHAIN:solana] Broadcasting pause transaction to Solana smart contract...`);
         await solanaService.pauseProtocol();
@@ -631,18 +727,12 @@ class MegapotService {
         await this.setPaused(true);
       }
 
-      const oldData = await this.getRoundState();
-      if (!oldData) {
-        console.error(`[CACHE] Cannot proceed with transition: No active round found in cache.`);
-        return false;
-      }
-
       // Wait for Megapot to roll over. The protocol stays PAUSED the entire
       // time — that is intended (a dead Megapot must never receive relays).
-      // We poll with backoff (2s → 60s cap), alert loudly, and NEVER abandon:
+      // We poll at a fixed 10s interval, alert loudly, and NEVER abandon:
       // only this loop can resume the protocol, so giving up = paused forever.
       let consecutiveFailures = 0;
-      let pollDelayMs = 2_000;
+      const POLL_DELAY_MS = 10_000;
       const waitStart = Date.now();
       let lastStuckAlertAt = 0;
 
@@ -659,21 +749,21 @@ class MegapotService {
           const fetchedIdNum = parseInt(String(fetchedRaw.id), 10);
           const nextEpochBigInt = BigInt(fetchedRaw.id);
 
-          if (fetchedIdNum > oldData.id) {
+          if (fetchedIdNum > current.id) {
             console.log(`[SERVICE:megapot] Success! Megapot API rolled over to new Epoch: ${fetchedIdNum}`);
 
             try {
-              console.log(`[SERVICE:megapot] Fetching settlement data for concluded Epoch: ${oldData.id}`);
-              const settledRound = await this.fetchRoundById(oldData.id);
+              console.log(`[SERVICE:megapot] Fetching settlement data for concluded Epoch: ${current.id}`);
+              const settledRound = await this.fetchRoundById(current.id);
               await this.upsertSettledEpoch(settledRound);
 
               // Cross-process nudge (Redis pub/sub) so settlement reacts to
               // this epoch immediately instead of waiting up to 60s for its
               // next poll — works regardless of whether settlement/harvest
               // run in this same process or a separate worker process.
-              publishEpochSettled(oldData.id);
+              publishEpochSettled(current.id);
             } catch (err) {
-              console.warn(`[SERVICE:megapot] Could not fetch settled epoch ${oldData.id} during transition. Will backfill later.`, err);
+              console.warn(`[SERVICE:megapot] Could not fetch settled epoch ${current.id} during transition. Will backfill later.`, err);
             }
 
             const onChain = await solanaService.getOnChainState();
@@ -703,7 +793,7 @@ class MegapotService {
             break;
           }
 
-          console.log(`[SERVICE:megapot] Still returning old Epoch (${fetchedIdNum}). Waiting ${Math.round(pollDelayMs / 1000)}s before retry...`);
+          console.log(`[SERVICE:megapot] Still returning old Epoch (${fetchedIdNum}). Waiting ${Math.round(POLL_DELAY_MS / 1000)}s before retry...`);
 
           // Alert path: Megapot stuck (e.g. Base outage). Stay paused — but scream.
           const stuckMs = Date.now() - waitStart;
@@ -719,8 +809,7 @@ class MegapotService {
             console.error(`[ALERT] Megapot API unreachable for ${consecutiveFailures} consecutive attempts. Protocol remains PAUSED — still retrying, will NOT abandon.`);
           }
         } finally {
-          await new Promise((r) => setTimeout(r, pollDelayMs));
-          pollDelayMs = Math.min(Math.round(pollDelayMs * 1.5), 60_000);
+          await new Promise((r) => setTimeout(r, POLL_DELAY_MS));
         }
       }
 
@@ -763,7 +852,7 @@ class MegapotService {
     const diffMs =
         new Date(saved.ended_at).getTime() -
         Date.now() -
-        this.PRE_EMPTIVE_BUFFER_MS;
+        this.PRE_EMPTIVE_BUFFER_MS; // * 10 mins + 15 secs
 
     if (diffMs <= 0) {
       console.log(`[CRON:setup] WARNING: Time buffer expired! In danger zone — triggering immediate transition loop.`);
@@ -787,8 +876,7 @@ class MegapotService {
     console.log(`\n[SERVICE:megapot] ==== BOOTING MEGAPOT SYNC ENGINE ====`);
 
     try {
-      
-       console.log(`[SERVICE:megapot] Phase 1: Backfilling historical epochs...`);
+      console.log(`[SERVICE:megapot] Phase 1: Backfilling historical epochs...`);
       await this.syncAllSettledRounds();
       
       console.log(`[SERVICE:megapot] Phase 2: Bootstrapping active round and cron timers...`);

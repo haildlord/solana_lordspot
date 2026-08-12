@@ -19,7 +19,7 @@ export function CountdownBadge({ targetIso, label = 'Next draw' }: CountdownBadg
   return (
     <div className={styles.badge}>
       <span className={styles.dot} />
-      <span className={styles.label}>{label}:</span>
+      {label && <span className={styles.label}>{label}:</span>}
       <span className={styles.value}>{text}</span>
     </div>
   );

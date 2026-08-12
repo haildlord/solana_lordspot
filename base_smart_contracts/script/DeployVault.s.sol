@@ -17,10 +17,10 @@ contract DeployVault is Script {
         // 1. Load your deployer/owner key from the .env
         uint256 relayerPrivateKey = vm.envUint("RELAYER_BASE_SIGNER_PRIVATEKEY");
         address relayer = vm.addr(relayerPrivateKey);                               // 0x43848A2e9CDa31d1CD9Cc6abfAa90A36afE91295
-        address megapotAddress = vm.envAddress("MEGAPOT_BASE_SEPOLIA_ADDRESS");             // 0x3bAe643002069dBCbcd62B1A4eb4C4A397d042a2
-        address usdcAddress = vm.envAddress("USDC_BASE_SEPOLIA_ADDRESS");                   // 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+        address megapotAddress = vm.envAddress("MEGAPOT_BASE_SEPOLIA_ADDRESS");     // 0x459e63eA3B9E5ba7C8cE7897099BA36D07021346
+        address usdcAddress = vm.envAddress("USDC_BASE_SEPOLIA_ADDRESS");           // 0x036CbD53842c5426634e7929541eC2318f3dCF7e
         address referrerAddress = vm.envAddress("BASE_REWARD_WALLET_ADDRESS");      // 0x3e2Cce5C52918081721b6cF47c7CB306aCb99c6d
-
+        
         // 2. ANVIL key donating some ether to the relayer so that we can deploy our smart contract & call later buyTickets !
         // vm.startBroadcast(ownerPrivateKey);
         //     payable(relayer).call{value: 10 ether}("");
@@ -30,7 +30,7 @@ contract DeployVault is Script {
         vm.startBroadcast(relayerPrivateKey);
 
             uint256 gasStart = gasleft();
-
+            // vault : 0xE11b2B80fD954eA7e6a9B6e4E9A5Af406a2De4f5
             LordsPotBaseVault vault = new LordsPotBaseVault(
                 owner,           
                 relayer,         

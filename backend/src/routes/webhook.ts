@@ -82,8 +82,6 @@ router.post('/helius', verifyHeliusAuth, async (req: Request, res: Response) => 
   try {
     const transactions = Array.isArray(req.body) ? req.body : [req.body];
 
-    console.dir(transactions, { depth: null, colors: true });
-
     console.log(`[WEBHOOK] Processing payload containing ${transactions.length} transaction(s)`);
 
     const fresh: { signature: string; tx: unknown }[] = [];

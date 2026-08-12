@@ -13,21 +13,23 @@
   margin-bottom: var(--space-4);
 }
 
+/* "UP FOR GRABS" is chrome around the prize pool, not the value itself — the
+   only gold on the home page is the $ figure below (.valueShadow/.valueGradient). */
 .line {
   height: 1px;
   width: 32px;
-  background: linear-gradient(to right, transparent, var(--color-gold-500));
+  background: linear-gradient(to right, transparent, var(--color-text-dim));
 }
 
 .labelRow .line:last-child {
-  background: linear-gradient(to left, transparent, var(--color-gold-500));
+  background: linear-gradient(to left, transparent, var(--color-text-dim));
 }
 
 .label {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.35em;
-  color: var(--color-gold-500);
+  color: var(--color-text);
 }
 
 /* 1. THE CONTAINER */

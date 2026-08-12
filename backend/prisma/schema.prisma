@@ -73,10 +73,11 @@ model RelayOrder {
   attemptCount     Int            @default(0)
   lastError        String?
   nextRetryAt      DateTime?
-  baseTxHash       String?
+  baseTxHash       String?        // legacy single-tx field — unset for orders relayed as multiple RelayBatch rows; see Ticket.baseTxHash for the per-ticket source of truth
   megapotTicketIds String[]       @default([])
   tickets          Ticket[]
   attempts         RelayAttempt[]
+  batches          RelayBatch[]
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -97,6 +98,30 @@ model RelayAttempt {
   @@index([orderHash])
 }
 
+/// One buyTickets() transaction covering a chunk (≤15) of one order's tickets.
+/// Orders larger than the per-tx chunk size relay as multiple RelayBatch rows
+/// instead of one — EIP-7825 caps a single Base transaction at 16,777,216 gas,
+/// and this contract's per-ticket combo-tracking cost (~800-824k gas/ticket)
+/// makes anything much above 15 tickets exceed that in one tx. Mirrors
+/// HarvestBatch's exact crash-safety shape: tickets are bound to a batch row
+/// BEFORE broadcasting, so a crash mid-flight is always recoverable from
+/// Postgres + the chain alone, same as the harvest side.
+model RelayBatch {
+  id          String        @id @default(uuid())
+  orderHash   String
+  relayOrder  RelayOrder    @relation(fields: [orderHash], references: [hash])
+  batchIndex  Int           // 0-based position among the order's batches, for ordering/logging only
+  txHash      String?       // null only in the tiny window between row creation and broadcast
+  status      HarvestStatus @default(SUBMITTED) // same SUBMITTED/CONFIRMED/FAILED shape as harvest — reused, not duplicated
+  error       String?
+  tickets     Ticket[]
+  createdAt   DateTime      @default(now())
+  confirmedAt DateTime?
+
+  @@index([orderHash, status])
+  @@index([status])
+}
+
 model Ticket {
   id           String     @id @default(uuid())
   orderHash    String
@@ -104,6 +129,7 @@ model Ticket {
   bonusBall    Int        @db.SmallInt
   normalBalls  Int[]      @db.SmallInt
   megapotNftId String?
+  baseTxHash   String?    // set alongside megapotNftId once this ticket's RelayBatch confirms — the real per-ticket source of truth (RelayOrder.baseTxHash is legacy/single-tx only)
   winStatus    WinStatus  @default(DRAW_PENDING)
   winAmount    BigInt     @default(0)
 
@@ -117,11 +143,14 @@ model Ticket {
   harvestBatchId String?
   payoutClaim    PayoutClaim?  @relation(fields: [payoutClaimId], references: [id])
   payoutClaimId  String?
+  relayBatch     RelayBatch?   @relation(fields: [relayBatchId], references: [id])
+  relayBatchId   String?
 
   @@index([orderHash])
   @@index([winStatus])
   @@index([harvestBatchId])
   @@index([payoutClaimId])
+  @@index([relayBatchId])
 }
 
 model IndexerCursor {
@@ -173,6 +202,12 @@ model MegapotEpoch {
   normalMax Int? @db.SmallInt
   bonusMax  Int? @db.SmallInt
 
+  // The real Megapot round's ended_at — distinct from drawnAt (settled_at, when
+  // Megapot posted results, which can lag ended_at slightly). This is the precise
+  // anchor the frontend needs for "hide new results until ended_at + 10min" —
+  // ProtocolState.endedAt only ever holds the CURRENT round's end time, so once
+  // a round moves on, this is the only place its real end time survives.
+  endedAt DateTime?
   drawnAt DateTime?
   ticketsSettledAt DateTime?
   ticketsHarvestedAt DateTime?

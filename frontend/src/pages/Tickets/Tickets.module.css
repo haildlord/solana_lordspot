@@ -56,7 +56,15 @@
   box-shadow: var(--shadow-gold-glow);
 }
 
-.cardCountdown {
+.cardCountdownWrap {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+/* Purchase hasn't relayed to Base yet — no countdown clock until it's actually
+   confirmed in the drawing, just a neutral in-progress marker. */
+.cardProcessing {
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
@@ -69,16 +77,62 @@
   border: 1px solid var(--color-border-strong);
   font-size: 10px;
   font-weight: 800;
-  font-family: ui-monospace, monospace;
-  color: var(--color-text);
+  color: var(--color-text-dim);
 }
 
-.cardCountdownDot {
+.cardProcessingDot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--color-danger);
-  box-shadow: 0 0 6px rgba(248, 113, 113, 0.8);
+  background: var(--color-info);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* Countdown hit zero — the backend is almost certainly already done (grading
+   runs the instant an epoch settles, not on a delay), we just haven't
+   refetched yet. A glowing "about to happen" marker instead of a dead
+   "DRAWING NOW" placeholder for however long that gap is. */
+.cardReveal {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(212, 175, 55, 0.18);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--color-gold-500);
+  animation: revealGlow 1.4s ease-in-out infinite;
+}
+
+.cardRevealDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-gold-500);
+}
+
+.heroRevealBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  background: rgba(212, 175, 55, 0.16);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-gold-500);
+  animation: revealGlow 1.4s ease-in-out infinite;
+}
+
+@keyframes revealGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(212, 175, 55, 0.25); }
+  50% { box-shadow: 0 0 18px rgba(212, 175, 55, 0.6); }
 }
 
 .cardBadges {
@@ -191,16 +245,26 @@
   gap: 6px;
   flex-wrap: wrap;
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
 }
 
+.plainRow:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+
+/* One continuous scrollable card instead of a stack of gapped boxes — rows
+   inside are separated by a hairline (see .plainRow/.row :not(:first-child))
+   rather than a gap, and the whole thing scrolls internally once it grows
+   past max-height instead of pushing the page down indefinitely. */
 .plainList,
 .groupList {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  max-height: 420px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
 }
 
 .purchasedHeader {
@@ -224,8 +288,10 @@
 /* --- Transaction history --- */
 .txSection {
   margin-top: var(--space-6);
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  padding: var(--space-4);
 }
 
 .txHeader {
@@ -241,23 +307,24 @@
 .txList {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 .txRow {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  transition: border-color var(--duration-fast) var(--ease-out);
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
 }
 
-.txRow:hover {
-  border-color: var(--color-border-strong);
+.txRow:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+
+.txMeta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
 .txCount {
@@ -269,20 +336,101 @@
 .txDate {
   font-size: 11px;
   color: var(--color-text-dim);
-  margin-top: 2px;
 }
 
-.txSig {
+/* --- Dual proof-of-tx: LordsPot relays, so every order leaves two independent
+   receipts — the user's own Solana buy, and the relayer's Base buyTickets. --- */
+.txProofGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.txProof {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'chain icon'
+    'hash  hash';
+  row-gap: 3px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition: transform var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.txProof:hover {
+  transform: translateY(-1px);
+}
+
+.txProofChain {
+  grid-area: chain;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.txProofHash {
+  grid-area: hash;
   font-size: 11px;
   font-family: ui-monospace, monospace;
-  color: var(--color-text-faint);
-  margin-top: 2px;
+  color: var(--color-text);
 }
 
-.txLinkIcon {
-  font-size: 15px;
+.txProofIcon {
+  grid-area: icon;
+  font-size: 13px;
   color: var(--color-text-faint);
-  flex-shrink: 0;
+}
+
+/* Solana half: pink-purplish, matching the app's existing violet accent. */
+.txProofSolana {
+  background:
+    linear-gradient(155deg, rgba(168, 85, 247, 0.22), rgba(236, 72, 153, 0.08)) padding-box,
+    linear-gradient(155deg, rgba(168, 85, 247, 0.45), rgba(236, 72, 153, 0.15)) border-box;
+}
+
+.txProofSolana:hover {
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
+.txProofSolana .txProofChain {
+  color: var(--color-violet-300);
+}
+
+/* Base half: dark blue gradient, same treatment mirrored in blue. */
+.txProofBase {
+  background:
+    linear-gradient(155deg, rgba(37, 99, 235, 0.22), rgba(30, 58, 138, 0.1)) padding-box,
+    linear-gradient(155deg, rgba(96, 165, 250, 0.45), rgba(30, 58, 138, 0.2)) border-box;
+}
+
+.txProofBase:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.txProofBase .txProofChain {
+  color: var(--color-blue-300);
+}
+
+/* Base half, not confirmed yet — the relay hasn't landed, so there is no tx to link to. */
+.txProofPending {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.03) padding-box, var(--color-border) border-box;
+}
+
+.txProofPending:hover {
+  transform: none;
+}
+
+.txProofPendingLabel {
+  grid-area: hash;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-faint);
+  animation: pulse 1.6s ease-in-out infinite;
 }
 
 /* --- Detail header --- */
@@ -337,17 +485,6 @@
   margin-top: var(--space-2);
 }
 
-.heroCountdown {
-  font-size: 40px;
-  font-weight: 900;
-  font-family: ui-monospace, monospace;
-  letter-spacing: 0.02em;
-  background: linear-gradient(135deg, #fff, var(--color-violet-300));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 .heroSub {
   font-size: 13px;
   color: var(--color-text-dim);
@@ -393,7 +530,7 @@
 }
 
 .dotBonus {
-  border-color: rgba(212, 175, 55, 0.4);
+  border-color: rgba(168, 85, 247, 0.4);
 }
 
 .gradingNotice {
@@ -440,29 +577,6 @@
   font-weight: 900;
   letter-spacing: -0.01em;
   color: var(--color-success);
-  margin-top: var(--space-2);
-}
-
-/* --- Points (lost) hero --- */
-.pointsHero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-8) var(--space-6);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(160deg, rgba(126, 20, 255, 0.22), rgba(56, 189, 248, 0.08));
-  border: 1px solid rgba(168, 85, 247, 0.32);
-  box-shadow: var(--shadow-violet-glow);
-  text-align: center;
-  margin-bottom: var(--space-4);
-}
-
-.pointsHeadline {
-  font-size: 26px;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-  color: #fff;
   margin-top: var(--space-2);
 }
 

@@ -30,6 +30,11 @@
   --color-violet-500: #a855f7;
   --color-violet-700: #7e14ff;
 
+  /* --- Brand: blue (Base chain proof-of-tx) --- */
+  --color-blue-300: #60a5fa;
+  --color-blue-500: #2563eb;
+  --color-blue-700: #1e3a8a;
+
   /* --- Semantic --- */
   --color-success: #34d399;
   --color-success-bg: rgba(52, 211, 153, 0.12);

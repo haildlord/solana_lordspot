@@ -27,6 +27,10 @@ export function useEpochs() {
     queryFn: ({ pageParam }) => getEpochs(pageParam),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    // Newest epoch stays hidden server-side until its reveal gate passes (see
+    // /v1/protocol/epochs) — poll so it appears on its own once that happens,
+    // same as the other pages, instead of only on next mount/focus.
+    refetchInterval: 20_000,
   });
 }
 

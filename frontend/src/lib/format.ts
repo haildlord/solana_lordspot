@@ -52,3 +52,4 @@ export function formatCountdown(targetIso: string | null): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
+

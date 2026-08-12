@@ -17,10 +17,13 @@ import { onEpochSettled, publishEpochGraded } from '../lib/epochEvents';
  * on some matching tiers (e.g. 1 normal + no bonus) while 0-normals+bonusball
  * pays. winAmount stores the NET payout: gross tier payout minus Megapot's 10%
  * referral win-share, mirroring the claim contract's exact integer math
- * (share = floor(gross × share/UNIT), net = gross − share — NOT floor(gross×0.9),
- * which differs by 1 unit on some amounts). Harvest receipts
- * (TicketWinningsClaimed events) remain the final authority and should
- * reconcile against these values.
+ * (share = floor(gross × bps/10000), net = gross − share — NOT floor(gross×0.9),
+ * which differs by 1 unit on some amounts). That reduction is applied ONCE,
+ * upstream, in megapotService.ts's applyReferralShare (used by
+ * processPrizeTiers) — epoch.prizeTiers is already net by the time this file
+ * reads it, so the `gross` local below is really already-net despite the
+ * name. Harvest receipts (TicketWinningsClaimed events) remain the final
+ * authority and should reconcile against these values.
  *
  * Free-ticket tiers (tier 1: bonusball only, tier 4: 2 normals no bonus) are
  * marked WON_FREE_TICKET instead of WON_UNCLAIMED — product redeems those as a
@@ -45,11 +48,6 @@ const POLL_MS = 60_000;             // 1 min
 const TICKET_BATCH = 500;
 const MAX_BATCHES_PER_EPOCH = 2_000; // runaway guard: 1M tickets/epoch hard stop
 const BIG_WIN_ALERT_UNITS = 1_000_000_000n; // $1,000 net (6dp) — page a human, liquidity may be needed
-
-// Megapot skims this off every win at claim time (drawingState.referralWinShare).
-// We are the referrer, so the skim flows back to our reward wallet — but the
-// USER's payout is net of it. 1000 bps = 10%.
-const REFERRAL_WIN_SHARE_BPS = 1_000n;
 
 // Tiers redeemed as a free ticket instead of cash: 1 (bonusball only) and
 // 4 (2 normals, no bonus). Gross 1111112 is engineered so net ≈ ticketPrice.
@@ -156,23 +154,25 @@ async function settleEpoch(epoch: {
     for (const t of tickets) {
       
       const tierId = calcTierId(t.normalBalls, t.bonusBall, winningSet, epoch.winningBonusBall);
+      // `tiers` is built from epoch.prizeTiers, which megapotService's
+      // processPrizeTiers already reduced by the 10% referral win-share
+      // (applyReferralShare) at ingestion time — so despite the name, this
+      // value is already NET, not gross. Do NOT re-apply the reduction here;
+      // that would double-deduct. (The old inline referrerShare/net lines that
+      // used to live here referenced an undefined REFERRAL_WIN_SHARE_BPS and
+      // were always dead — removed rather than left as a landmine.)
       const gross = tiers.get(tierId) ?? 0n;
       if (gross === 0n) {
         losers.push(t.id);
         continue;
       }
 
-      // Mirror the claim contract's integer math exactly: floor the SHARE,
-      // then subtract — this is what the vault will actually receive per ticket.
-      const referrerShare = (gross * REFERRAL_WIN_SHARE_BPS) / 10_000n;
-      const net = gross - referrerShare;
-
       const status = FREE_TICKET_TIERS.has(tierId)
         ? ('WON_FREE_TICKET' as const)
         : ('WON_UNCLAIMED' as const);
 
-      const key = `${status}|${net}`;
-      const group = winnersByGroup.get(key) ?? { status, amount: net, ids: [] };
+      const key = `${status}|${gross}`;
+      const group = winnersByGroup.get(key) ?? { status, amount: gross, ids: [] };
       group.ids.push(t.id);
       winnersByGroup.set(key, group);
     }

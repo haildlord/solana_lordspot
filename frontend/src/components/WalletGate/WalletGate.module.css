@@ -10,14 +10,13 @@
   border-radius: var(--radius-xl);
   background: var(--color-surface-glass);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(212, 175, 55, 0.18);
+  border: 1px solid var(--color-border-strong);
   box-shadow: var(--shadow-card);
 }
 
 .icon {
   font-size: 32px;
   margin-bottom: var(--space-1);
-  filter: drop-shadow(0 0 12px rgba(212, 175, 55, 0.3));
 }
 
 .title {
@@ -35,16 +34,16 @@
   margin-top: var(--space-2);
   padding: 12px 28px;
   border-radius: var(--radius-md);
-  background: var(--gradient-gold);
-  color: #1a1204;
+  background: #fff;
+  color: #0a0a0a;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.25);
+  transition: transform var(--duration-fast) var(--ease-out);
 }
 
 .button:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-gold-glow);
 }

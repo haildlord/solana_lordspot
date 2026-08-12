@@ -1,0 +1,158 @@
+.panel {
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  animation: fadeIn var(--duration-base) var(--ease-out) both;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.panelTitle {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.panelActions {
+  display: flex;
+  gap: 6px;
+}
+
+.iconButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.iconButton:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.iconButtonActive {
+  color: var(--color-violet-300);
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.iconButtonDanger:hover {
+  color: var(--color-danger);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.rows {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.rowWrap:not(:first-child) .row {
+  border-top: 1px solid var(--color-border);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.rowBalls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.emptySlot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--color-border-strong);
+  flex-shrink: 0;
+}
+
+.emptySlotBonus {
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.quickFillRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.quickFillButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--color-violet-300);
+  color: var(--color-violet-300);
+  background: rgba(168, 85, 247, 0.08);
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.quickFillRow:hover .quickFillButton {
+  transform: scale(1.08);
+}
+
+.quickFillLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-faint);
+}
+
+.rowActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.expandedGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+  animation: fadeIn var(--duration-fast) var(--ease-out) both;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
+  gap: 5px;
+}
+
+.completeHint {
+  font-size: 10px;
+  color: var(--color-text-faint);
+  text-align: center;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
