@@ -38,7 +38,8 @@ export const config = {
 
   base: {
     // BASE_RPC_URL in production; ANVIL_RPC_URL kept as an alias for local anvil setups
-    rpcUrl: requiredOneOf(['BASE_RPC_URL', 'ANVIL_RPC_URL']),
+    rpcUrl: requiredOneOf(['BASE_SEPOLIA_RPC_URL', 'ANVIL_RPC_URL']),
+    tempURL: required('BASE_RPC_URL'), // -> remove this in production
     chainId: parseInt(process.env.BASE_CHAIN_ID!, 10),
     vaultAddress: required('LORDSPOT_BASE_VAULT'),
     relayerKey: required('RELAYER_BASE_SIGNER_PRIVATEKEY'),

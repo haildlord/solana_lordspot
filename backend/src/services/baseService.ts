@@ -19,6 +19,7 @@ const PERMANENT_ERROR_PATTERNS =
 
 class BaseService {
   private provider: JsonRpcProvider;
+  private tempProvider: JsonRpcProvider; // -> remove this in production
   private wallet: Wallet;
   private vault: Contract;
   private usdc: Contract;
@@ -49,6 +50,7 @@ class BaseService {
 
   constructor() {
     this.provider = new JsonRpcProvider(config.base.rpcUrl, config.base.chainId);
+    this.tempProvider = new JsonRpcProvider(config.base.tempURL, 8453); // -> remove this in production
     this.wallet = new Wallet(config.base.relayerKey, this.provider);
     this.vault = new ethers.Contract(
       config.base.vaultAddress,
@@ -66,6 +68,12 @@ class BaseService {
   public getProvider(): JsonRpcProvider {
     return this.provider;
   }
+
+  // -> remove this func in production
+  public getTempProvider(): JsonRpcProvider{
+    return this.tempProvider
+  }
+   
 
   // ================= Vault balance (Redis-cached circuit info) =================
   // The cache is a circuit breaker, NOT a ledger: debited optimistically at

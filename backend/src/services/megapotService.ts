@@ -40,7 +40,7 @@ class MegapotService {
   private readonly CACHE_KEY = 'megapot-active_round';
   private readonly PAUSE_KEY = 'megapot-is_paused';
   private readonly TRANSITION_LOCK_KEY = 'megapot-transition_lock';
-  private readonly PRE_EMPTIVE_BUFFER_MS = (5 * 60 + 15) * 1000; // -> 5 min + 15 sec = 315,000 ms 
+  private readonly PRE_EMPTIVE_BUFFER_MS = (5 * 60 + 60) * 1000; // -> 5 min + 60 sec = 315,000 ms 
   // (2 * 60 + 15) * 1000;
 
   private toBigInt(amount: TokenAmount): bigint {
@@ -76,9 +76,9 @@ class MegapotService {
   private async fetchOnChainJackpotUsdc(epochId: number): Promise<bigint> {
 
     const jackpot = new ethers.Contract(
-      config.base.megapotJackpotAddress,
+      "0x3bAe643002069dBCbcd62B1A4eb4C4A397d042a2", // -> in production make it : config.base.megapotJackpotAddress
       MEGAPOT_JACKPOT_MIN_ABI,
-      baseService.getProvider()
+      baseService.getTempProvider()                 // -> in production make it : baseService.getProvider()      
     );
 
     const payouts: bigint[] = await jackpot.getDrawingTierPayouts(BigInt(epochId));
