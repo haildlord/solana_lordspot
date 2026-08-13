@@ -684,7 +684,22 @@ public async syncPauseStateFromChain(): Promise<void> {
     // Due-check: protects against stale timers / heartbeat re-entry firing
     // after another process already completed the transition. Without this,
     // a late timer would PAUSE the protocol mid-epoch.
-    const current = await this.getRoundState();
+    let current = await this.getRoundState();
+
+    // Self-heal: an empty cache here almost always means Redis lost its data
+    // independently of this process (e.g. a free-tier Redis restart wiping a
+    // non-persistent instance) rather than the round genuinely being gone —
+    // rebuild it from Megapot's API before giving up, same fetch this app
+    // already trusts elsewhere (ensureActiveRoundCached, used post-transition).
+    if (!current) {
+      console.warn(`[CACHE] Active round missing from cache — attempting to rebuild from Megapot's API before aborting.`);
+      try {
+        current = await this.ensureActiveRoundCached();
+      } catch (err) {
+        console.error(`[CACHE] Rebuild failed — cannot proceed with transition.`, err);
+        return false;
+      }
+    }
 
     if (
       current &&
