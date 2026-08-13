@@ -880,8 +880,76 @@ public async syncPauseStateFromChain(): Promise<void> {
     }
   }
 
+  /**
+   * Boot-time on-chain epoch reconciliation — runs before any other sync
+   * work, on every boot, unconditionally. If this process (or its transition
+   * loop) was stuck or down while Megapot kept rolling rounds forward, the
+   * on-chain epoch can be left far behind the real current round — meaning
+   * newly bought tickets would carry a stale epoch number that can never
+   * correctly settle (worst case: it matches an already-decided historical
+   * round with publicly known winning numbers — exactly the gap this closes).
+   * A no-op when on-chain already matches or leads the real current round.
+   */
+  private async reconcileOnChainEpochAtBoot(): Promise<void> {
+    console.log(`[SERVICE:megapot] Phase 0: Verifying on-chain epoch matches Megapot's real current round...`);
+
+    try {
+      const onChain = await solanaService.getOnChainState();
+      const raw = await this.fetchActiveRoundRaw();
+      const realCurrentId = BigInt(String(raw.id));
+      const onChainEpoch = BigInt(onChain.ongoingEpoch.toString());
+
+      if (onChainEpoch >= realCurrentId) {
+        console.log(`[SERVICE:megapot] On-chain epoch (${onChainEpoch}) already matches or exceeds the real current round (${realCurrentId}) — no boot catch-up needed.`);
+        return;
+      }
+
+      console.warn(`[SERVICE:megapot] On-chain epoch (${onChainEpoch}) is behind Megapot's real current round (${realCurrentId}) — forcing catch-up before anything else runs.`);
+
+      const lock = await redisConnection.set(
+        this.TRANSITION_LOCK_KEY, String(process.pid), 'EX', 600, 'NX'
+      );
+      if (lock === null) {
+        console.log(`[SERVICE:megapot] Another process already holds the transition lock — skipping boot reconciliation, already being handled.`);
+        return;
+      }
+
+      try {
+        if (!onChain.isLordsPotPaused) {
+          console.log(`[CHAIN:solana] Pausing protocol for boot-time epoch catch-up...`);
+          await solanaService.pauseProtocol();
+          await this.setPaused(true);
+        }
+
+        const needsUpdate =
+          raw.ball_pool.normals_max !== onChain.normalMax ||
+          raw.ball_pool.bonusball_max !== onChain.bonusMax;
+
+        console.log(`[CHAIN:solana] Broadcasting resumeAndTransitionEpoch to catch on-chain epoch up to ${realCurrentId} (Config Update: ${needsUpdate})...`);
+        await solanaService.resumeAndTransitionEpoch(
+          raw.ball_pool.normals_max,
+          raw.ball_pool.bonusball_max,
+          needsUpdate,
+          realCurrentId
+        );
+
+        await this.processActiveRound(raw);
+        await this.setPaused(false);
+        console.log(`[SERVICE:megapot] On-chain epoch successfully caught up to ${realCurrentId}.`);
+      } finally {
+        await redisConnection.del(this.TRANSITION_LOCK_KEY).catch(() => {});
+      }
+    } catch (err) {
+      // Deliberately swallowed: a failed boot catch-up must not prevent the
+      // rest of the app from starting (webhook processing, etc.) — the
+      // regular transition heartbeat keeps retrying this independently,
+      // same as any other missed transition.
+      console.error(`[SERVICE:megapot] Boot-time epoch catch-up failed — protocol may remain paused until the next transition heartbeat retries it.`, err);
+    }
+  }
+
   public async startSync() {
-    
+
     if (this.isSyncing) {
       console.log(`[SERVICE:megapot] Sync already in progress, skipping startSync() invocation.`);
       return;
@@ -891,6 +959,8 @@ public async syncPauseStateFromChain(): Promise<void> {
     console.log(`\n[SERVICE:megapot] ==== BOOTING MEGAPOT SYNC ENGINE ====`);
 
     try {
+      await this.reconcileOnChainEpochAtBoot();
+
       console.log(`[SERVICE:megapot] Phase 1: Backfilling historical epochs...`);
       await this.syncAllSettledRounds();
       
