@@ -894,8 +894,31 @@ public async syncPauseStateFromChain(): Promise<void> {
     console.log(`[SERVICE:megapot] Phase 0: Verifying on-chain epoch matches Megapot's real current round...`);
 
     try {
-      const onChain = await solanaService.getOnChainState();
-      const raw = await this.fetchActiveRoundRaw();
+      // Boot-time RPC/API calls can hit a transient network blip in the
+      // first second or two after a fresh container start (cold-start
+      // DNS/connection not warmed up yet) — a bare ETIMEDOUT here would
+      // otherwise silently skip this safety check for the whole process
+      // lifetime, since nothing else retries it. Retry a few times before
+      // giving up.
+      let onChain: Awaited<ReturnType<typeof solanaService.getOnChainState>> | undefined;
+      let raw: MegapotRoundResponse | undefined;
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          [onChain, raw] = await Promise.all([
+            solanaService.getOnChainState(),
+            this.fetchActiveRoundRaw(),
+          ]);
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`[SERVICE:megapot] Phase 0 fetch attempt ${attempt}/3 failed, ${attempt < 3 ? 'retrying in 2s...' : 'giving up.'}`, err);
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
+      if (lastErr || !onChain || !raw) throw lastErr ?? new Error('Phase 0 fetch failed with no data');
+
       const realCurrentId = BigInt(String(raw.id));
       const onChainEpoch = BigInt(onChain.ongoingEpoch.toString());
 
