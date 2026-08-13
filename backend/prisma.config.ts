@@ -9,6 +9,13 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // Migrations need a DIRECT (non-pooled) connection — Prisma Migrate's
+    // advisory lock (pg_advisory_lock) requires one stable session for the
+    // whole operation, which a pooled connection (Neon's default, PgBouncer-
+    // style) can't guarantee: it may hand out a different underlying session
+    // per request, so the lock-acquire and lock-check don't land on the same
+    // session and time out. DIRECT_DATABASE_URL falls back to DATABASE_URL
+    // for local dev, where Postgres has no pooler in front of it anyway.
+    url: process.env["DIRECT_DATABASE_URL"] ?? process.env["DATABASE_URL"],
   },
 });
