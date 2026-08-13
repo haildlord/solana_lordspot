@@ -104,7 +104,7 @@ class SolanaService {
       .accounts({ admin: this.wallet.publicKey })
       .instruction();
 
-    const { blockhash } = await this.connection.getLatestBlockhash();
+    const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash();
 
     const dummyMessage = new TransactionMessage({
       payerKey: this.wallet.publicKey,
@@ -138,6 +138,16 @@ class SolanaService {
     const txSig = await this.connection.sendRawTransaction(
       signed.serialize(),
       { skipPreflight: false, maxRetries: 3 }
+    );
+
+    // Callers (e.g. boot-time epoch reconciliation) may immediately build and
+    // simulate a follow-up transaction that requires the paused state to
+    // already be visible on-chain — wait for confirmation rather than just
+    // the broadcast accept, or that follow-up's simulation can race against
+    // a not-yet-landed pause and see stale (unpaused) state.
+    await this.connection.confirmTransaction(
+      { signature: txSig, blockhash, lastValidBlockHeight },
+      'confirmed'
     );
 
     console.log('[solana] Protocol paused:', txSig);
