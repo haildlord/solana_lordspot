@@ -5,7 +5,6 @@ import { submitClaimVoucher } from '../../solana/claimVoucher';
 import { formatUsdc } from '../../lib/format';
 import { WalletGate } from '../../components/WalletGate/WalletGate';
 import { TransactionOverlay, type TxState } from '../../components/TransactionOverlay/TransactionOverlay';
-import { CoinLoader } from '../../components/CoinLoader/CoinLoader';
 import { EmptyState } from '../../components/EmptyState/EmptyState';
 import styles from './Winnings.module.css';
 
@@ -53,7 +52,6 @@ export function Winnings() {
     <div className={styles.page}>
       <TransactionOverlay
         state={txState}
-        loadingText="SIGN IN YOUR WALLET..."
         successText="CLAIM SUBMITTED"
         errorText={message || 'CLAIM FAILED'}
       />

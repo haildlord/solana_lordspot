@@ -5,7 +5,6 @@ export type TxState = 'idle' | 'loading' | 'success' | 'error';
 
 interface TransactionOverlayProps {
   state: TxState;
-  loadingText?: string;
   successText?: string;
   errorText?: string;
 }
@@ -13,7 +12,6 @@ interface TransactionOverlayProps {
 /** Full-screen modal reused by every on-chain action (buy, claim) so the app has one consistent transaction feel. */
 export function TransactionOverlay({
   state,
-  loadingText = 'CONFIRMING...',
   successText = 'SUCCESS',
   errorText = 'SOMETHING WENT WRONG',
 }: TransactionOverlayProps) {
@@ -21,12 +19,7 @@ export function TransactionOverlay({
 
   return (
     <div className={styles.overlay}>
-        {state === 'loading' && (
-          <>
-            <CoinLoader size="md" />
-            {/* <p className={styles.loadingText}>{loadingText}</p> */}
-          </>
-        )}
+        {state === 'loading' && <CoinLoader size="md" />}
 
         {state === 'success' && (
         <div className={styles.card}>

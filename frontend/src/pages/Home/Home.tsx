@@ -96,7 +96,6 @@ export function Home() {
     <div className={styles.page}>
       <TransactionOverlay
         state={txState}
-        loadingText="SECURING TICKETS..."
         successText="TICKETS SECURED"
         errorText={errorMsg || 'PURCHASE FAILED'}
       />
