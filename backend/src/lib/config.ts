@@ -19,6 +19,10 @@ export const config = {
   port: parseInt(process.env.PORT ?? '3000', 10),
   nodeEnv: process.env.NODE_ENV ?? 'development', // ! what is this what to put.
   inlineWorkers: process.env.INLINE_WORKERS === 'true',
+  // Lets one process run API + workers + cron together — for a single
+  // always-on free-tier host (e.g. Render's one free web service) where
+  // running cron as its own separate service isn't an option.
+  inlineCron: process.env.INLINE_CRON === 'true',
   databaseUrl: required('DATABASE_URL'),
   redisUrl: process.env.REDIS_URL ?? 'redis://127.0.0.1:6379',
   duneUrl: required('DUNE_URL'),
