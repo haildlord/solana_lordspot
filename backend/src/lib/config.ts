@@ -17,7 +17,7 @@ function requiredOneOf(keys: string[]): string {
 export const config = {
 
   port: parseInt(process.env.PORT ?? '3000', 10),
-  nodeEnv: process.env.NODE_ENV ?? 'development', // ! what is this what to put.
+  nodeEnv: process.env.NODE_ENV ?? 'development',
   inlineWorkers: process.env.INLINE_WORKERS === 'true',
   // Lets one process run API + workers + cron together — for a single
   // always-on free-tier host (e.g. Render's one free web service) where
@@ -49,7 +49,7 @@ export const config = {
     usdcAddress: requiredOneOf([`USDC_BASE_ADDRESS`, `USDC_BASE_SEPOLIA_ADDRESS`]),
     // Megapot's own Jackpot contract on Base (not our vault) — read-only
     // calls only (getDrawingTierPayouts), never a tx target.
-    megapotJackpotAddress: required('MEGAPOT_BASE_SEPOLIA_ADDRESS')
+    megapotJackpotAddress: requiredOneOf(['MEGAPOT_BASE_ADDRESS','MEGAPOT_BASE_SEPOLIA_ADDRESS'])
   },
 
   megapot: {
