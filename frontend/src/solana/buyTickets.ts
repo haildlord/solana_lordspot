@@ -1,20 +1,31 @@
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  createTransferCheckedInstruction,
+} from '@solana/spl-token';
 import { Program, AnchorProvider } from '@coral-xyz/anchor'; // Import AnchorProvider
 import type { SolanaSmartContracts } from '../idl/lords_pot_types';
 import { getLordsPotStatePda, getVaultAuthorityPda, getVaultUsdcAta, getUserUsdcAta } from './pdas';
-import { USDC_MINT, TICKET_RULES } from './constants';
+import { USDC_MINT, USDC_DECIMALS, TICKET_RULES, RELAY_FEE_BASE_USDC, RELAY_FEE_PER_TICKET_USDC } from './constants';
 import type { StagedTicket } from './ticketUtils';
 
 /**
  * Sends buy_ticket directly to the LordsPot program.
- * Bundles tickets into safe instruction and transaction chunk sizes to avoid 
+ * Bundles tickets into safe instruction and transaction chunk sizes to avoid
  * Anchor buffer overruns and Solana's 1232-byte transaction size limit.
+ *
+ * Also bundles a plain USDC transfer covering the relay fee (see constants.ts)
+ * into the same transaction as the first buy_ticket instruction — atomic with
+ * the purchase, computed once for the whole call so a multi-transaction batch
+ * (>50 tickets) never double-charges the base fee.
  */
 export async function buyTickets(
   program: Program<SolanaSmartContracts>,
   buyer: PublicKey,
-  tickets: StagedTicket[]
+  tickets: StagedTicket[],
+  feeRecipient: PublicKey
 ): Promise<string[]> {
   // Hard backstop against a malformed on-chain instruction — the UI (Home.tsx)
   // already disables Buy while any staged ticket is incomplete (e.g. mid-edit
@@ -36,10 +47,34 @@ export async function buyTickets(
 
   const transactionsToBundle: { tx: Transaction; signers: any[] }[] = [];
 
+  const totalFee = RELAY_FEE_BASE_USDC + RELAY_FEE_PER_TICKET_USDC * tickets.length;
+  const feeRecipientUsdcAccount = getUserUsdcAta(feeRecipient);
+
   // 2. Loop through tickets and build multiple transactions if needed
   for (let i = 0; i < tickets.length; i += TICKETS_PER_TX) {
     const txTickets = tickets.slice(i, i + TICKETS_PER_TX);
     const transaction = new Transaction();
+
+    // Relay fee — bundled once, into the first transaction only, so a
+    // multi-transaction batch (>50 tickets) never double-charges it.
+    if (i === 0) {
+      transaction.add(
+        createAssociatedTokenAccountIdempotentInstruction(
+          buyer,
+          feeRecipientUsdcAccount,
+          feeRecipient,
+          USDC_MINT
+        ),
+        createTransferCheckedInstruction(
+          buyerUsdcAccount,
+          USDC_MINT,
+          feeRecipientUsdcAccount,
+          buyer,
+          totalFee,
+          USDC_DECIMALS
+        )
+      );
+    }
 
     // 3. Inside each transaction, pack up to 2 instructions (25 tickets each)
     for (let j = 0; j < txTickets.length; j += TICKETS_PER_IX) {

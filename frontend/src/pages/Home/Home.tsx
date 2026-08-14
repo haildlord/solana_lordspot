@@ -6,6 +6,7 @@ import { useOnChainState } from '../../solana/useOnChainState';
 import { useLordsPotProgram } from '../../solana/program';
 import { buyTickets } from '../../solana/buyTickets';
 import { isTicketComplete } from '../../solana/ticketUtils';
+import { RELAY_FEE_BASE_USDC, RELAY_FEE_PER_TICKET_USDC } from '../../solana/constants';
 import { usdcToNumber } from '../../lib/format';
 import { CountdownBadge } from '../../components/CountdownBadge/CountdownBadge';
 import { NumberBall } from '../../components/NumberBall/NumberBall';
@@ -46,7 +47,12 @@ export function Home() {
   const normalMax = onChain?.normalMax ?? 30;
   const bonusMax = onChain?.bonusMax ?? 10;
   const ticketPrice = onChain ? usdcToNumber(onChain.ticketPriceUsdc) : 1;
-  const totalCost = stagedTickets.length * ticketPrice;
+  const ticketSubtotal = stagedTickets.length * ticketPrice;
+  const relayFee =
+    stagedTickets.length > 0
+      ? usdcToNumber(RELAY_FEE_BASE_USDC + RELAY_FEE_PER_TICKET_USDC * stagedTickets.length)
+      : 0;
+  const totalCost = ticketSubtotal + relayFee;
   const isPaused = onChain?.isPaused ?? protocolState?.isPaused ?? false;
 
   const atCap = stagedTickets.length >= MAX_STAGED_TICKETS;
@@ -75,11 +81,11 @@ export function Home() {
   }
 
   async function handleBuy() {
-    if (!program || !publicKey || !allComplete || stagedTickets.length > MAX_STAGED_TICKETS || isPaused) return;
+    if (!program || !publicKey || !onChain?.admin || !allComplete || stagedTickets.length > MAX_STAGED_TICKETS || isPaused) return;
 
     setTxState('loading');
     try {
-      await buyTickets(program, publicKey, stagedTickets);
+      await buyTickets(program, publicKey, stagedTickets, onChain.admin);
       clearTickets();
       closeEditor();
       setTxState('success');
@@ -225,9 +231,29 @@ export function Home() {
             </div>
           )}
 
+          {stagedTickets.length > 0 && allComplete && (
+            <div className={styles.costBreakdown}>
+              <div className={styles.costRow}>
+                <span>Tickets ({stagedTickets.length} × ${ticketPrice.toFixed(2)})</span>
+                <span>${ticketSubtotal.toFixed(2)}</span>
+              </div>
+              <div className={styles.costRow}>
+                <span>Relay fee</span>
+                <span>${relayFee.toFixed(3)}</span>
+              </div>
+              <div className={`${styles.costRow} ${styles.costTotal}`}>
+                <span>Total</span>
+                <span>${totalCost.toFixed(3)}</span>
+              </div>
+              <p className={styles.costHint}>
+                ≈ ${(relayFee / stagedTickets.length).toFixed(3)}/ticket relay cost at this count — stage more tickets in one purchase to spread it thinner.
+              </p>
+            </div>
+          )}
+
           <button
             className={styles.buyButton}
-            disabled={!allComplete || txState !== 'idle' || isPaused || !program}
+            disabled={!allComplete || txState !== 'idle' || isPaused || !program || !onChain?.admin}
             onClick={handleBuy}
           >
             {stagedTickets.length === 0

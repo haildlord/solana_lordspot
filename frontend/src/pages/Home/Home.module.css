@@ -253,6 +253,39 @@
   color: var(--color-text);
 }
 
+.costBreakdown {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.costRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  padding: 3px 0;
+}
+
+.costTotal {
+  margin-top: 2px;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.costHint {
+  margin: var(--space-2) 0 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-faint);
+}
+
 /* Primary CTA — plain white, matching the same treatment already used for
    the app's other primary actions (Tickets page's claim/check buttons). */
 .buyButton {
