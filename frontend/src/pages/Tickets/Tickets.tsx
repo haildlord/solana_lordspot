@@ -643,8 +643,6 @@ function WonDetail({
 }) {
   const navigate = useNavigate();
   const preview = group.tickets[0];
-  const hasUnclaimedCash = group.tickets.some((t) => t.winStatus === 'WON_UNCLAIMED');
-  // const claimLabel = hasUnclaimedCash ? '' : 'Claim Free Tickets';
   const claimLabel = 'Claim Rewards';
 
   return (
