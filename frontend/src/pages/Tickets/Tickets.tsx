@@ -200,7 +200,7 @@ export function Tickets() {
         {isLoading && (
           // when list of my tickets are loading
           <div className={styles.loading}>
-            <CoinLoader size="md" /> 
+            <CoinLoader size="sm" /> 
           </div>
         )}
 

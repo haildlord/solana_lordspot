@@ -62,12 +62,6 @@ export function Winnings() {
         title="Connect to view winnings"
         description="Check what's claimable and pull it straight to your wallet."
       >
-        {/* {isLoading && (
-          <div className={styles.loading}> // -> remove loading css from here
-            <CoinLoader size="md" />
-          </div>
-        )} */}
-
         {!isLoading && summary && (
           <>
             <div className={styles.availableCard}>

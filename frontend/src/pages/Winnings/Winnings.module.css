@@ -11,12 +11,6 @@
   margin-bottom: var(--space-6);
 }
 
-.loading {
-  display: flex;
-  justify-content: center;
-  padding: var(--space-12) 0;
-}
-
 .availableCard {
   display: flex;
   flex-direction: column;

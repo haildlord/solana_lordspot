@@ -19,7 +19,7 @@ export function TransactionOverlay({
 
   return (
     <div className={styles.overlay}>
-        {state === 'loading' && <CoinLoader size="md" />}
+        {state === 'loading' && <CoinLoader size="sm" />}
 
         {state === 'success' && (
         <div className={styles.card}>

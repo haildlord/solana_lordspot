@@ -77,7 +77,7 @@ export function Results() {
       {isLoading && (
         // when results list is being loaded
         <div className={styles.loading}>
-          <CoinLoader size="md" />
+          <CoinLoader size="sm" />
         </div>
       )}
 
@@ -384,9 +384,9 @@ function WinnerDetailModal({
         </div>
 
         <div className={styles.modalScrollList}>
-          {!isLoading && (
+          {isLoading && (
             <div className={styles.loading}>
-              <CoinLoader size="md" label="" />
+              <CoinLoader size="sm" label="" />
             </div>
           )}
           {data?.tickets.map((t, i) => {
