@@ -353,22 +353,29 @@ function PreviousCard({
   );
 }
 
+interface RelayBatch {
+  baseTxHash: string | null;
+  count: number;
+}
+
 interface OrderProof {
   orderHash: string;
   count: number;
   purchasedAt: string;
   txSignature: string;
-  baseTxHash: string | null;
+  batches: RelayBatch[];
 }
 
 /** LordsPot is a relayer — every purchase leaves two independent proofs: the user's
- * own Solana buy tx, and the relayer's Base buyTickets tx that forwards it into Megapot.
- * A large purchase can relay across several Base transactions (chunked — see
- * baseRelayWorker.ts), so baseTxHash is checked per group, not gated on the parent
- * order's overall status: one chunk can be confirmed while others are still in flight. */
+ * own Solana buy tx, and the relayer's Base buyTickets tx(s) that forward it into Megapot.
+ *
+ * The relationship is ONE-TO-MANY, and the layout reflects that: a single Solana
+ * purchase of 65 tickets relays as five Base transactions (15/15/15/15/5), because
+ * Base's gas ceiling caps a buyTickets call far lower than Solana's byte limit caps
+ * a buy_ticket instruction (see baseRelayWorker.ts chunking). Rendering one row per
+ * Base tx used to repeat the same Solana hash five times, which read as five separate
+ * purchases. One Solana proof on the left, its relay batches stacked beside it. */
 function TxProofRow({ order }: { order: OrderProof }) {
-  const baseConfirmed = !!order.baseTxHash;
-
   return (
     <div className={styles.txRow}>
       <div className={styles.txMeta}>
@@ -390,23 +397,45 @@ function TxProofRow({ order }: { order: OrderProof }) {
           <span className={styles.txProofIcon}>↗</span>
         </a>
 
-        {baseConfirmed ? (
-          <a
-            className={`${styles.txProof} ${styles.txProofBase}`}
-            href={`https://sepolia.basescan.org/tx/${order.baseTxHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className={styles.txProofChain}>Base</span>
-            <span className={styles.txProofHash}>{shortenAddress(order.baseTxHash!, 6)}</span>
-            <span className={styles.txProofIcon}>↗</span>
-          </a>
-        ) : (
-          <div className={`${styles.txProof} ${styles.txProofBase} ${styles.txProofPending}`}>
-            <span className={styles.txProofChain}>Base</span>
-            <span className={styles.txProofPendingLabel}>Processing…</span>
-          </div>
-        )}
+        {/* Scrollable so a big purchase's relay batches never push the page around.
+            Sized to show ~3 batches with the next one half-visible, which is what
+            signals "there is more here" without needing a scrollbar to be drawn. */}
+        <div
+          className={styles.txBatches}
+          role={order.batches.length > 1 ? 'list' : undefined}
+          aria-label={order.batches.length > 1 ? `${order.batches.length} relay batches on Base` : undefined}
+        >
+          {order.batches.map((b, i) => {
+            const label = `${b.count} ticket${b.count === 1 ? '' : 's'}`;
+            return b.baseTxHash ? (
+              <a
+                key={b.baseTxHash}
+                className={`${styles.txProof} ${styles.txProofBase}`}
+                href={`https://sepolia.basescan.org/tx/${b.baseTxHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                role={order.batches.length > 1 ? 'listitem' : undefined}
+              >
+                <span className={styles.txProofChain}>
+                  Base<span className={styles.txBatchCount}>{label}</span>
+                </span>
+                <span className={styles.txProofHash}>{shortenAddress(b.baseTxHash, 6)}</span>
+                <span className={styles.txProofIcon}>↗</span>
+              </a>
+            ) : (
+              <div
+                key={`pending-${i}`}
+                className={`${styles.txProof} ${styles.txProofBase} ${styles.txProofPending}`}
+                role={order.batches.length > 1 ? 'listitem' : undefined}
+              >
+                <span className={styles.txProofChain}>
+                  Base<span className={styles.txBatchCount}>{label}</span>
+                </span>
+                <span className={styles.txProofPendingLabel}>Processing…</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -415,26 +444,50 @@ function TxProofRow({ order }: { order: OrderProof }) {
 function TxHistory({ tickets }: { tickets: UserTicket[] }) {
   const [open, setOpen] = useState(false);
 
-  // Grouped by (order, base tx) — not just order — because a large purchase
-  // can relay across several Base transactions (chunked, see baseRelayWorker.ts).
-  // Tickets still awaiting their batch's confirmation (baseTxHash still null)
-  // share one "Processing…" group per order until each batch lands.
+  // Grouped by ORDER (one row per Solana purchase), with the relay's Base
+  // transactions nested inside it. Grouping by (order, base tx) instead — as
+  // this once did — split a single 65-ticket purchase into five rows that each
+  // repeated the same Solana hash, reading as five separate purchases.
+  //
+  // Tickets whose batch hasn't confirmed yet (baseTxHash still null) collapse
+  // into a single "Processing…" batch per order, since they genuinely have no
+  // distinct transaction to point at yet.
   const orders = useMemo<OrderProof[]>(() => {
-    const map = new Map<string, OrderProof>();
+    const map = new Map<string, OrderProof & { batchMap: Map<string, RelayBatch> }>();
+
     for (const t of tickets) {
-      const key = `${t.orderHash}:${t.baseTxHash ?? 'pending'}`;
-      const existing = map.get(key);
-      if (existing) existing.count += 1;
-      else
-        map.set(key, {
+      let order = map.get(t.orderHash);
+      if (!order) {
+        order = {
           orderHash: t.orderHash,
-          count: 1,
+          count: 0,
           purchasedAt: t.purchasedAt,
           txSignature: t.txSignature,
-          baseTxHash: t.baseTxHash,
-        });
+          batches: [],
+          batchMap: new Map(),
+        };
+        map.set(t.orderHash, order);
+      }
+      order.count += 1;
+
+      const batchKey = t.baseTxHash ?? 'pending';
+      const batch = order.batchMap.get(batchKey);
+      if (batch) batch.count += 1;
+      else order.batchMap.set(batchKey, { baseTxHash: t.baseTxHash, count: 1 });
     }
-    return [...map.values()].sort((a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime());
+
+    return [...map.values()]
+      .map(({ batchMap, ...order }) => ({
+        ...order,
+        // Confirmed batches first; anything still relaying sits at the end,
+        // so the pending state is where the user's eye lands last.
+        batches: [...batchMap.values()].sort((a, b) => {
+          if (!a.baseTxHash) return 1;
+          if (!b.baseTxHash) return -1;
+          return 0;
+        }),
+      }))
+      .sort((a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime());
   }, [tickets]);
 
   return (
@@ -446,7 +499,7 @@ function TxHistory({ tickets }: { tickets: UserTicket[] }) {
       {open && (
         <div className={styles.txList}>
           {orders.map((o) => (
-            <TxProofRow key={`${o.orderHash}:${o.baseTxHash ?? 'pending'}`} order={o} />
+            <TxProofRow key={o.orderHash} order={o} />
           ))}
         </div>
       )}
