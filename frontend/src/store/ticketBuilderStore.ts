@@ -8,15 +8,18 @@ import { generateQuickPick, emptyTicket, type StagedTicket } from '../solana/tic
  * which real wallets either choke on or the user outright rejects, and by the
  * time signing finishes the earliest transactions' blockhash has often expired.
  *
- * At 65 tickets per transaction, 250 is FOUR transactions behind a single
+ * At 65 tickets per transaction, 200 is FOUR transactions behind a single
  * wallet approval — well inside what wallets handle smoothly, and signed fast
  * enough that no blockhash goes stale. Raising it further is a wallet-UX
  * question, not a protocol one.
  *
+ * Must stay equal to the LAST entry of QUICK_COUNTS in Home.tsx, so the biggest
+ * one-tap option is always reachable rather than silently clamped.
+ *
  * Sized generously on purpose: LordsPot earns Megapot referral revenue on every
  * ticket sold, so a bigger basket is straightforwardly better for the protocol.
  * Restricting how much someone can buy costs us money. */
-export const MAX_STAGED_TICKETS = 250;
+export const MAX_STAGED_TICKETS = 200;
 
 interface TicketBuilderState {
   stagedTickets: StagedTicket[];

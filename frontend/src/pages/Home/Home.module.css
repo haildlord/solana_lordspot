@@ -270,6 +270,48 @@
   padding: 3px 0;
 }
 
+/* "FREE" relay fee — the single strongest differentiator on this page
+   (competitors charge ~$0.21 flat), so it gets the gold treatment rather than
+   reading as just another grey number. The sweep animation runs once every few
+   seconds to catch the eye without becoming a distraction. */
+.freeBadge {
+  position: relative;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--gradient-gold);
+  color: #1a1200;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  box-shadow: var(--shadow-gold-glow);
+}
+
+.freeBadge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.75) 50%,
+    transparent 80%
+  );
+  transform: translateX(-120%);
+  animation: freeShine 3.5s ease-in-out infinite;
+}
+
+@keyframes freeShine {
+  0%, 55% { transform: translateX(-120%); }
+  100%    { transform: translateX(120%); }
+}
+
+/* Respect users who ask the OS to reduce motion — the gold still reads as
+   special without anything moving. */
+@media (prefers-reduced-motion: reduce) {
+  .freeBadge::after { animation: none; }
+}
+
 .costTotal {
   margin-top: 2px;
   padding-top: var(--space-2);

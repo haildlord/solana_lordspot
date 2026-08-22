@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { useTicketBuilderStore, MAX_STAGED_TICKETS } from '../../store/ticketBuilderStore';
 import { useProtocolState } from '../../api/hooks';
@@ -16,7 +16,9 @@ import { TransactionOverlay, type TxState } from '../../components/TransactionOv
 import { WalletGate } from '../../components/WalletGate/WalletGate';
 import styles from './Home.module.css';
 
-const QUICK_COUNTS = [1, 5, 10, 25];
+/** One-tap basket sizes. The LAST entry must equal MAX_STAGED_TICKETS, or the
+ *  biggest chip would be silently clamped when tapped. */
+const QUICK_COUNTS = [5, 10, 50, 100, 150, 200];
 
 export function Home() {
   const { publicKey } = useWallet();
@@ -64,6 +66,23 @@ export function Home() {
   useEffect(() => {
     setCountText(String(stagedTickets.length));
   }, [stagedTickets.length]);
+
+  // Land on 1 staged ticket instead of an empty basket, so the page opens
+  // ready-to-buy rather than asking the user to do setup first.
+  //
+  // Deliberately waits for `onChain`: the ball ranges come from the program,
+  // and seeding against the fallbacks could generate a number outside the
+  // real range — a ticket that looks fine but reverts on submit. Buying
+  // already requires `onChain` anyway, so nothing is lost by waiting.
+  //
+  // The ref makes this fire ONCE. Without it, a user deliberately clearing the
+  // basket to 0 would get a ticket silently re-added under them.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || !onChain || stagedTickets.length > 0) return;
+    seededRef.current = true;
+    syncStagedCount(1, normalMax, bonusMax);
+  }, [onChain, stagedTickets.length, normalMax, bonusMax, syncStagedCount]);
 
   function setCount(next: number) {
     syncStagedCount(Math.max(0, Math.min(next, MAX_STAGED_TICKETS)), normalMax, bonusMax);
@@ -151,9 +170,13 @@ export function Home() {
               value={countText}
               onFocus={(e) => e.target.select()}
               onChange={(e) => {
-                const raw = e.target.value.replace(/[^0-9]/g, '').slice(0, 3);
-                setCountText(raw);
-                if (raw !== '') setCount(Number(raw));
+                // Clamp to MAX_STAGED_TICKETS as the user types, not just on
+                // submit — typing "500" would otherwise show 500 in the box
+                // while the basket silently held 200.
+                const digits = e.target.value.replace(/[^0-9]/g, '').slice(0, String(MAX_STAGED_TICKETS).length);
+                const clamped = digits === '' ? '' : String(Math.min(Number(digits), MAX_STAGED_TICKETS));
+                setCountText(clamped);
+                if (clamped !== '') setCount(Number(clamped));
               }}
               onBlur={() => setCountText(String(stagedTickets.length))}
             />
@@ -238,7 +261,11 @@ export function Home() {
               </div>
               <div className={styles.costRow}>
                 <span>Relay fee</span>
-                <span>{relayFee === 0 ? 'FREE' : `$${relayFee.toFixed(3)}`}</span>
+                {relayFee === 0 ? (
+                  <span className={styles.freeBadge}>FREE</span>
+                ) : (
+                  <span>${relayFee.toFixed(3)}</span>
+                )}
               </div>
               <div className={`${styles.costRow} ${styles.costTotal}`}>
                 <span>Total</span>
