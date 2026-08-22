@@ -340,15 +340,58 @@
 
 /* --- Dual proof-of-tx: LordsPot relays, so every order leaves two independent
    receipts — the user's own Solana buy, and the relayer's Base buyTickets. --- */
-/* Solana proof on the left, its Base relay batches stacked to the RIGHT — the
-   relationship is one-to-many, so they sit side by side rather than the Base
-   list running underneath. The Solana column is narrower than the old 1fr 1fr
-   split because one hash needs less room than a scrolling stack does. */
-.txProofGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+/* Toggle that reveals a chunked purchase's Base relay transactions.
+   Sits directly under the Solana proof: the relationship is one-to-many, and
+   stacking reads as "this, then that" far better than a side-by-side split,
+   which left a tall empty column beside the single Solana card. */
+.txBatchToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  background: rgba(37, 99, 235, 0.08);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.txBatchToggle:hover {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(37, 99, 235, 0.14);
+}
+
+.txBatchToggleLabel {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
-  align-items: start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-blue-300);
+}
+
+/* Surfaces "not everything has landed yet" on the collapsed row, so a user
+   never has to expand just to find out whether the relay finished. */
+.txBatchPendingDot {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+}
+
+.txBatchChevron {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-text-faint);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.txBatchChevronOpen {
+  transform: rotate(180deg);
 }
 
 /* Scroll container for the relay batches.
@@ -362,6 +405,9 @@
   max-height: 178px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Indented under the toggle so the nesting is obvious at a glance. */
+  padding-left: var(--space-3);
+  border-left: 1px solid rgba(96, 165, 250, 0.18);
   /* Room for the scrollbar so it never sits on top of the tx hashes. */
   padding-right: 4px;
   scrollbar-width: thin;
@@ -392,13 +438,9 @@
   text-transform: none;
 }
 
-/* Stack the two chains on narrow screens — side-by-side would squeeze both
-   hashes past the point of being readable. */
+/* Shorter scroll window on small screens so an expanded batch list doesn't
+   swallow the whole viewport. */
 @media (max-width: 560px) {
-  .txProofGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .txBatches {
     max-height: 150px;
   }

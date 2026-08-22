@@ -375,7 +375,42 @@ interface OrderProof {
  * a buy_ticket instruction (see baseRelayWorker.ts chunking). Rendering one row per
  * Base tx used to repeat the same Solana hash five times, which read as five separate
  * purchases. One Solana proof on the left, its relay batches stacked beside it. */
+function BaseBatchCard({ batch, multi }: { batch: RelayBatch; multi: boolean }) {
+  const label = `${batch.count} ticket${batch.count === 1 ? '' : 's'}`;
+
+  if (!batch.baseTxHash) {
+    return (
+      <div className={`${styles.txProof} ${styles.txProofBase} ${styles.txProofPending}`} role={multi ? 'listitem' : undefined}>
+        <span className={styles.txProofChain}>
+          Base{multi && <span className={styles.txBatchCount}>{label}</span>}
+        </span>
+        <span className={styles.txProofPendingLabel}>Processing…</span>
+      </div>
+    );
+  }
+
+  return (
+    <a
+      className={`${styles.txProof} ${styles.txProofBase}`}
+      href={`https://sepolia.basescan.org/tx/${batch.baseTxHash}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      role={multi ? 'listitem' : undefined}
+    >
+      <span className={styles.txProofChain}>
+        Base{multi && <span className={styles.txBatchCount}>{label}</span>}
+      </span>
+      <span className={styles.txProofHash}>{shortenAddress(batch.baseTxHash, 6)}</span>
+      <span className={styles.txProofIcon}>↗</span>
+    </a>
+  );
+}
+
 function TxProofRow({ order }: { order: OrderProof }) {
+  const [open, setOpen] = useState(false);
+  const multi = order.batches.length > 1;
+  const pendingCount = order.batches.filter((b) => !b.baseTxHash).length;
+
   return (
     <div className={styles.txRow}>
       <div className={styles.txMeta}>
@@ -385,58 +420,40 @@ function TxProofRow({ order }: { order: OrderProof }) {
         <span className={styles.txDate}>{formatDateTime(order.purchasedAt)}</span>
       </div>
 
-      <div className={styles.txProofGrid}>
-        <a
-          className={`${styles.txProof} ${styles.txProofSolana}`}
-          href={`https://explorer.solana.com/tx/${order.txSignature}?cluster=devnet`}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <span className={styles.txProofChain}>Solana</span>
-          <span className={styles.txProofHash}>{shortenAddress(order.txSignature, 6)}</span>
-          <span className={styles.txProofIcon}>↗</span>
-        </a>
+      <a
+        className={`${styles.txProof} ${styles.txProofSolana}`}
+        href={`https://explorer.solana.com/tx/${order.txSignature}?cluster=devnet`}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <span className={styles.txProofChain}>Solana</span>
+        <span className={styles.txProofHash}>{shortenAddress(order.txSignature, 6)}</span>
+        <span className={styles.txProofIcon}>↗</span>
+      </a>
 
-        {/* Scrollable so a big purchase's relay batches never push the page around.
-            Sized to show ~3 batches with the next one half-visible, which is what
-            signals "there is more here" without needing a scrollbar to be drawn. */}
-        <div
-          className={styles.txBatches}
-          role={order.batches.length > 1 ? 'list' : undefined}
-          aria-label={order.batches.length > 1 ? `${order.batches.length} relay batches on Base` : undefined}
-        >
-          {order.batches.map((b, i) => {
-            const label = `${b.count} ticket${b.count === 1 ? '' : 's'}`;
-            return b.baseTxHash ? (
-              <a
-                key={b.baseTxHash}
-                className={`${styles.txProof} ${styles.txProofBase}`}
-                href={`https://sepolia.basescan.org/tx/${b.baseTxHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                role={order.batches.length > 1 ? 'listitem' : undefined}
-              >
-                <span className={styles.txProofChain}>
-                  Base<span className={styles.txBatchCount}>{label}</span>
-                </span>
-                <span className={styles.txProofHash}>{shortenAddress(b.baseTxHash, 6)}</span>
-                <span className={styles.txProofIcon}>↗</span>
-              </a>
-            ) : (
-              <div
-                key={`pending-${i}`}
-                className={`${styles.txProof} ${styles.txProofBase} ${styles.txProofPending}`}
-                role={order.batches.length > 1 ? 'listitem' : undefined}
-              >
-                <span className={styles.txProofChain}>
-                  Base<span className={styles.txBatchCount}>{label}</span>
-                </span>
-                <span className={styles.txProofPendingLabel}>Processing…</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* A single relay batch is just shown — collapsing one card behind a click
+          is pure friction. Only a genuinely chunked purchase gets the toggle. */}
+      {!multi ? (
+        <BaseBatchCard batch={order.batches[0]} multi={false} />
+      ) : (
+        <>
+          <button type="button" className={styles.txBatchToggle} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            <span className={styles.txBatchToggleLabel}>
+              Relayed to Base in {order.batches.length} batches
+              {pendingCount > 0 && <span className={styles.txBatchPendingDot}>{pendingCount} pending</span>}
+            </span>
+            <span className={`${styles.txBatchChevron} ${open ? styles.txBatchChevronOpen : ''}`}>⌄</span>
+          </button>
+
+          {open && (
+            <div className={styles.txBatches} role="list" aria-label={`${order.batches.length} relay batches on Base`}>
+              {order.batches.map((b, i) => (
+                <BaseBatchCard key={b.baseTxHash ?? `pending-${i}`} batch={b} multi />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
