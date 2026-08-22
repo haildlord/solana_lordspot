@@ -41,7 +41,8 @@ async function main() {
     throw new Error(`❌ Keypair file not found at: ${keypairPath}`);
   }
   
-  // Your private key (base58 string)
+  // Anchor testing already `Public` private key (base58 string) - H8Q7CUvPigtSxfd13TKRuFrwdJtc6pJu9BMNhbXF9yAY -- used to test buy tickets.
+  // No need to worry about the private key here.
   const privateKey = "5q4fcE1JKeb4XTUQtrrxEYUCxR8QjWC2mqY9JBgDwyKpUskaVWthuDaZn6hf87XmPMUawRSfPPJDwqTxxNFEtnDN";
   const secretKey = bs58.decode(privateKey);
 

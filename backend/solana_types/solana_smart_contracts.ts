@@ -239,6 +239,97 @@ export type SolanaSmartContracts = {
           }
         },
         {
+          "name": "feeRecipientUsdcAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "lords_pot_state.fee_recipient",
+                "account": "lordsPotState"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "usdcMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
           "name": "vaultAuthority",
           "pda": {
             "seeds": [
@@ -296,33 +387,6 @@ export type SolanaSmartContracts = {
     },
     {
       "name": "claimWinnings",
-      "docs": [
-        "User-pulled payout authorized by a TWO-SIGNATURE voucher — no per-user",
-        "balance is ever stored on-chain, so the relayer pays zero rent and",
-        "zero fees for claims.",
-        "",
-        "Flow: the backend looks up the user's total claimable winnings in its",
-        "own books (settlement + harvest data), builds this instruction with",
-        "that exact `amount`, PARTIALLY SIGNS it with the admin key, and hands",
-        "it to the frontend. The user counter-signs in their wallet (also",
-        "paying the tx fee) and submits. USDC moves vault → user ATA directly.",
-        "",
-        "Why `amount` can be trusted: the admin co-signature. A user alone",
-        "cannot invent a voucher (admin constraint fails); a stolen voucher",
-        "pays only the wallet named in it, since the destination is the",
-        "signer's own canonical ATA — it cannot be redirected.",
-        "",
-        "Replay safety: a Solana transaction executes at most once and its",
-        "blockhash expires in ~60s, so a landed or expired voucher is dead.",
-        "What the chain CANNOT see is double-ISSUANCE — the backend must never",
-        "have two live unconfirmed vouchers out for the same user (one-live-",
-        "voucher-per-user discipline, enforced off-chain).",
-        "",
-        "Gated on is_lords_pot_paused: pause is the protocol-wide emergency",
-        "brake and freezes purchases AND claims. A voucher issued just before a",
-        "pause reverts cleanly and dies at blockhash expiry — no stuck state.",
-        "Only withdraw_vault_funds is exempt from the pause (evacuation lever)."
-      ],
       "discriminator": [
         161,
         215,
@@ -336,22 +400,11 @@ export type SolanaSmartContracts = {
       "accounts": [
         {
           "name": "user",
-          "docs": [
-            "The winner receiving the payout. Must sign: proves live control of",
-            "the destination wallet and gives explicit consent. Also the fee",
-            "payer, so the relayer spends nothing on claims."
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "admin",
-          "docs": [
-            "The backend admin key must ALSO sign this same transaction — the",
-            "co-signature is what authorizes `amount`. Neither party alone can",
-            "move a single unit: the user can't invent a voucher, and the admin",
-            "can't pay out to a wallet that didn't counter-sign."
-          ],
           "signer": true
         },
         {
@@ -627,8 +680,7 @@ export type SolanaSmartContracts = {
         {
           "name": "signer",
           "writable": true,
-          "signer": true,
-          "address": "AigbEGvypACrUq7hgjNwCDfd8SfcgfTH6esHu8maHysS"
+          "signer": true
         },
         {
           "name": "lordsPotState",
@@ -807,6 +859,108 @@ export type SolanaSmartContracts = {
         {
           "name": "startingEpoch",
           "type": "u64"
+        },
+        {
+          "name": "relayFeeBase",
+          "type": "u64"
+        },
+        {
+          "name": "relayFeePerTicket",
+          "type": "u64"
+        },
+        {
+          "name": "feeRecipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "maxTicketsPerPurchase",
+          "type": "u8"
+        },
+        {
+          "name": "maxClaimAmount",
+          "type": "u64"
+        },
+        {
+          "name": "treasuryAuthority",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "migrateState",
+      "discriminator": [
+        34,
+        189,
+        226,
+        222,
+        218,
+        156,
+        19,
+        213
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "lordsPotState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "relayFeeBase",
+          "type": "u64"
+        },
+        {
+          "name": "relayFeePerTicket",
+          "type": "u64"
+        },
+        {
+          "name": "feeRecipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "maxTicketsPerPurchase",
+          "type": "u8"
+        },
+        {
+          "name": "maxClaimAmount",
+          "type": "u64"
+        },
+        {
+          "name": "treasuryAuthority",
+          "type": "pubkey"
         }
       ]
     },
@@ -914,6 +1068,192 @@ export type SolanaSmartContracts = {
       ]
     },
     {
+      "name": "setAdmin",
+      "docs": [
+        "Hand the admin role to a new key (pause/resume/epoch/claim-signing/config)."
+      ],
+      "discriminator": [
+        251,
+        163,
+        0,
+        52,
+        91,
+        194,
+        187,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "newAdmin",
+          "docs": [
+            "Signs to prove the key is real and controlled before the protocol is",
+            "handed to it. Not `mut` — nothing is written to it and it pays nothing."
+          ],
+          "signer": true
+        },
+        {
+          "name": "lordsPotState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "setRelayConfig",
+      "discriminator": [
+        205,
+        63,
+        195,
+        69,
+        46,
+        165,
+        156,
+        210
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "lordsPotState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "relayFeeBase",
+          "type": "u64"
+        },
+        {
+          "name": "relayFeePerTicket",
+          "type": "u64"
+        },
+        {
+          "name": "feeRecipient",
+          "type": "pubkey"
+        },
+        {
+          "name": "maxTicketsPerPurchase",
+          "type": "u8"
+        },
+        {
+          "name": "maxClaimAmount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "setTreasuryAuthority",
+      "discriminator": [
+        131,
+        244,
+        37,
+        32,
+        108,
+        28,
+        31,
+        8
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "newTreasury",
+          "docs": [
+            "Signs to prove the key is real and controlled before the vault is handed to it."
+          ],
+          "signer": true
+        },
+        {
+          "name": "lordsPotState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  111,
+                  114,
+                  100,
+                  115,
+                  95,
+                  112,
+                  111,
+                  116,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "updateEpoch",
       "discriminator": [
         218,
@@ -974,14 +1314,15 @@ export type SolanaSmartContracts = {
     {
       "name": "withdrawVaultFunds",
       "docs": [
-        "Admin-only withdrawal from the vault USDC ATA to any USDC token account.",
-        "Three uses: recovering devnet USDC after testing, production treasury",
-        "rebalancing (CCTP bridging of the Solana/Base imbalance), and emergency",
-        "evacuation of funds.",
+        "Move USDC out of the vault. Used for recovering devnet funds, treasury",
+        "rebalancing (CCTP bridging the Solana/Base imbalance), and emergencies.",
         "",
-        "Deliberately NOT gated on is_lords_pot_paused: this is the evacuation",
-        "lever — it must keep working mid-incident, precisely when everything",
-        "else (purchases, claims) is frozen by the pause."
+        "Requires the TREASURY key, not `admin`. This is the most powerful",
+        "instruction here — uncapped, moves the whole vault — so it's exactly",
+        "what the always-online hot key must not be able to do. Keep it cold.",
+        "",
+        "NOT blocked by the pause: this is the evacuation lever, it has to work",
+        "mid-incident when everything else is frozen."
       ],
       "discriminator": [
         230,
@@ -995,7 +1336,7 @@ export type SolanaSmartContracts = {
       ],
       "accounts": [
         {
-          "name": "admin",
+          "name": "treasury",
           "writable": true,
           "signer": true
         },
@@ -1294,6 +1635,46 @@ export type SolanaSmartContracts = {
       "code": 6014,
       "name": "invalidDestination",
       "msg": "Destination token account mint does not match the vault USDC mint."
+    },
+    {
+      "code": 6015,
+      "name": "exceedsMaxTicketsPerPurchase",
+      "msg": "This purchase exceeds the maximum tickets allowed in a single instruction."
+    },
+    {
+      "code": 6016,
+      "name": "claimExceedsMaxAmount",
+      "msg": "Claim amount exceeds the protocol's maximum allowed single payout."
+    },
+    {
+      "code": 6017,
+      "name": "invalidMaxTicketsPerPurchase",
+      "msg": "max_tickets_per_purchase must be between 1 and the hard ceiling."
+    },
+    {
+      "code": 6018,
+      "name": "invalidMaxClaimAmount",
+      "msg": "max_claim_amount must be greater than zero."
+    },
+    {
+      "code": 6019,
+      "name": "unexpectedStateSize",
+      "msg": "State account is not the expected legacy size — refusing to migrate it."
+    },
+    {
+      "code": 6020,
+      "name": "invalidStateAccount",
+      "msg": "Account is not a valid LordsPot state account."
+    },
+    {
+      "code": 6021,
+      "name": "sameAsPreviousAdmin",
+      "msg": "The new admin is already the current admin."
+    },
+    {
+      "code": 6022,
+      "name": "invalidTreasuryAuthority",
+      "msg": "treasury_authority must not be the default (all-zero) pubkey."
     }
   ],
   "types": [
@@ -1329,6 +1710,43 @@ export type SolanaSmartContracts = {
           {
             "name": "admin",
             "type": "pubkey"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "relayFeeBase",
+            "type": "u64"
+          },
+          {
+            "name": "relayFeePerTicket",
+            "type": "u64"
+          },
+          {
+            "name": "feeRecipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "maxTicketsPerPurchase",
+            "type": "u8"
+          },
+          {
+            "name": "maxClaimAmount",
+            "type": "u64"
+          },
+          {
+            "name": "treasuryAuthority",
+            "type": "pubkey"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                96
+              ]
+            }
           }
         ]
       }

@@ -2,15 +2,21 @@ import { create } from 'zustand';
 import { generateQuickPick, emptyTicket, type StagedTicket } from '../solana/ticketUtils';
 
 /** Hard cap on tickets staged for a single purchase. Not about our own Base
- * batching (that already handles arbitrary volume via 15-ticket chunks) —
- * it's here because the wallet and Solana itself can't: a large enough
- * purchase turns into dozens of Solana transactions handed to one
- * signAllTransactions call, which real wallets either choke on or the user
- * outright rejects, and by the time signing finishes the earliest
- * transactions' blockhash has often expired. 25 keeps a purchase to a single
- * Solana transaction in the common case — comfortably inside what a wallet
- * actually handles smoothly. */
-export const MAX_STAGED_TICKETS = 25;
+ * batching (that already handles arbitrary volume by chunking) — it's here
+ * because the wallet and Solana itself can't: a large enough purchase turns
+ * into dozens of Solana transactions handed to one signAllTransactions call,
+ * which real wallets either choke on or the user outright rejects, and by the
+ * time signing finishes the earliest transactions' blockhash has often expired.
+ *
+ * At 65 tickets per transaction, 250 is FOUR transactions behind a single
+ * wallet approval — well inside what wallets handle smoothly, and signed fast
+ * enough that no blockhash goes stale. Raising it further is a wallet-UX
+ * question, not a protocol one.
+ *
+ * Sized generously on purpose: LordsPot earns Megapot referral revenue on every
+ * ticket sold, so a bigger basket is straightforwardly better for the protocol.
+ * Restricting how much someone can buy costs us money. */
+export const MAX_STAGED_TICKETS = 250;
 
 interface TicketBuilderState {
   stagedTickets: StagedTicket[];

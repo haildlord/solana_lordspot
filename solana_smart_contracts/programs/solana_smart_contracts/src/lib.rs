@@ -11,8 +11,8 @@ declare_id!("5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo");
 pub mod solana_smart_contracts {
     use super::*;
 
-    // WARNING : Before calling this function 
-    // make sure `fee_recipient` has > 0 USDC already, or else buy_tickets() will revert for buyers
+    // * WARNING : Before calling this function, make sure `fee_recipient`'s USDC
+    // * ATA has been CREATED, or else buy_ticket() will revert for every buyer.
     pub fn initialize(
         ctx: Context<Initialize>,
         normal_max: u8,
@@ -23,12 +23,11 @@ pub mod solana_smart_contracts {
         relay_fee_per_ticket: u64,
         fee_recipient: Pubkey,
         max_tickets_per_purchase: u8,
-        max_claim_amount: u64
+        max_claim_amount: u64,
+        treasury_authority: Pubkey
     ) -> Result<()> {
-        // Validated up front, exactly as set_relay_config does — an initialize
-        // that left max_tickets_per_purchase at 0 would deploy a protocol where
-        // every purchase reverts.
         validate_relay_config(max_tickets_per_purchase, max_claim_amount)?;
+        validate_treasury(treasury_authority)?;
 
         let state = &mut ctx.accounts.lords_pot_state;
 
@@ -40,9 +39,6 @@ pub mod solana_smart_contracts {
 
         state.ongoing_epoch = starting_epoch;
 
-        // A freshly initialized account is born at the current layout, so it
-        // never needs migrate_state. (_reserved is left as the zeroes `init`
-        // already wrote.)
         state.version = STATE_VERSION;
 
         state.relay_fee_base = relay_fee_base;
@@ -50,6 +46,7 @@ pub mod solana_smart_contracts {
         state.fee_recipient = fee_recipient;
         state.max_tickets_per_purchase = max_tickets_per_purchase;
         state.max_claim_amount = max_claim_amount;
+        state.treasury_authority = treasury_authority;
 
         let bump = ctx.bumps.lords_pot_state;
         state.bump = bump;
@@ -61,37 +58,6 @@ pub mod solana_smart_contracts {
         );
         Ok(())
     }
-
-    /// ONE-TIME upgrade of a v1 state account (52 data bytes) to the current
-    /// layout, preserving every existing value.
-    ///
-    /// WHY THIS TAKES A RAW ACCOUNT — and why that is not the footgun it looks
-    /// like. The account's stored bytes do not match LordsPotState yet; that is
-    /// the entire problem being solved. Any typed wrapper would fail
-    /// deserialization inside Anchor's account resolution, before a single line
-    /// of this handler could run. So the account arrives unchecked and this
-    /// code does the checking, explicitly and in order:
-    ///
-    ///   1. ADDRESS  — `seeds`/`bump` on the context re-derives the canonical
-    ///                 PDA. An attacker-supplied account fails here, so "pass
-    ///                 any account you like" is not available to them.
-    ///   2. OWNER    — `owner = crate::ID`. Only accounts this program owns can
-    ///                 be reallocated, and only ours can hold our state.
-    ///   3. SIZE     — must be exactly LEGACY_STATE_SIZE. Anything else is
-    ///                 already migrated (handled as a no-op) or unrecognised.
-    ///   4. DISCRIM. — must carry LordsPotState's Anchor discriminator.
-    ///   5. AUTHORITY— the admin pubkey is read from the v1 layout and must
-    ///                 match the signer. Note this reads the LIVE admin from
-    ///                 the account, NOT the ADMIN_PUBKEY compile-time constant,
-    ///                 so an admin rotated via set_admin stays in control here.
-    ///
-    /// Front-running is a non-issue: every path requires the current admin's
-    /// signature, so there is no version of this an attacker can win a race to
-    /// call. The real hazard is operational, not adversarial — between
-    /// deploying this bytecode and running this instruction, EVERY typed
-    /// instruction (buy, claim, pause, withdraw) fails deserialization. Pause
-    /// first, deploy, migrate, unpause.
-
     // * The Most Dangerous Function, admin needs to be very carefull, read all the below comments one mistake and protocol will be stuck :
     // * WARNING : Before migrating the state make sure you go and increment below else migration wont work : 
     // *    `++STATE_VERSION` which is a `const` variable.
@@ -103,11 +69,13 @@ pub mod solana_smart_contracts {
         relay_fee_per_ticket: u64,
         fee_recipient: Pubkey,
         max_tickets_per_purchase: u8,
-        max_claim_amount: u64
+        max_claim_amount: u64,
+        treasury_authority: Pubkey
     ) -> Result<()> {
 
         validate_relay_config(max_tickets_per_purchase, max_claim_amount)?;
-        
+        validate_treasury(treasury_authority)?;
+
         let old_state_data = ctx.accounts.lords_pot_state.to_account_info();
         let old_state_len = old_state_data.data_len();
         let new_size = 8 + LordsPotState::INIT_SPACE;
@@ -185,6 +153,7 @@ pub mod solana_smart_contracts {
         state.fee_recipient = fee_recipient;
         state.max_tickets_per_purchase = max_tickets_per_purchase;
         state.max_claim_amount = max_claim_amount;
+        state.treasury_authority = treasury_authority;
 
         let mut writer = std::io::Cursor::new(&mut data[..]);
         state.try_serialize(&mut writer)?;
@@ -196,20 +165,7 @@ pub mod solana_smart_contracts {
         Ok(())
     }
 
-    /// Rotate the operational admin (pause/resume/update_epoch/claim co-signer,
-    /// withdrawals, config).
-    ///
-    /// The INCOMING admin must sign this transaction too. That is not
-    /// ceremony — a plain "set admin to this pubkey" instruction lets one typo
-    /// hand the protocol to an address nobody holds the key for, permanently
-    /// bricking every admin-gated instruction including withdrawals, with the
-    /// vault still full. Requiring the new key to sign proves it exists and is
-    /// controlled before anything is written.
-    ///
-    /// NOTE: this rotates the admin STORED IN STATE. `ADMIN_PUBKEY` in
-    /// constants.rs is a separate, compile-time value used only by initialize,
-    /// and is intentionally left alone — a rotation must not depend on
-    /// redeploying bytecode.
+    /// Hand the admin role to a new key (pause/resume/epoch/claim-signing/config).
     pub fn set_admin(ctx: Context<SetAdmin>) -> Result<()> {
         let new_admin = ctx.accounts.new_admin.key();
         let state = &mut ctx.accounts.lords_pot_state;
@@ -221,15 +177,34 @@ pub mod solana_smart_contracts {
         Ok(())
     }
 
+    pub fn set_treasury_authority(ctx: Context<SetTreasuryAuthority>) -> Result<()> {
+        let new_treasury = ctx.accounts.new_treasury.key();
+        validate_treasury(new_treasury)?;
 
-    /// Deliberately NOT gated on is_lords_pot_paused: re-pricing must stay
-    /// available during an incident (e.g. a Base gas spike suddenly making the
-    /// current fee loss-making). Raising the fee mid-flight can make an
-    /// already-built user transaction revert — that is safe, not a loss: the
-    /// purchase is atomic, so the user simply rebuilds and retries.
+        let signer = ctx.accounts.authority.key();
+        let state = &mut ctx.accounts.lords_pot_state;
 
-    // WARNING : Before calling this function and if updating `fee_recipient`, 
-    // make sure fee_recipient has > 0 USDC already, or else buy_tickets() will revert for buyers
+        if state.treasury_authority == Pubkey::default() {
+            // Mode 1: one-time bootstrap of a pre-existing account.
+            require_keys_eq!(signer, state.admin, LordsPotError::Unauthorized);
+            msg!("Treasury bootstrapped by admin → {}", new_treasury);
+        } else {
+            // Mode 2: normal rotation, treasury-to-treasury only.
+            require_keys_eq!(signer, state.treasury_authority, LordsPotError::Unauthorized);
+            require_keys_neq!(
+                new_treasury,
+                state.treasury_authority,
+                LordsPotError::SameAsPreviousAdmin
+            );
+            msg!("Treasury rotated: {} → {}", state.treasury_authority, new_treasury);
+        }
+
+        state.treasury_authority = new_treasury;
+        Ok(())
+    }
+
+    // * WARNING : Before calling this function, make sure `fee_recipient`'s USDC
+    // * ATA has been CREATED, or else buy_ticket() will revert for every buyer.
     pub fn set_relay_config(
         ctx: Context<SetRelayConfig>,
         relay_fee_base: u64,
@@ -368,47 +343,12 @@ pub mod solana_smart_contracts {
         Ok(())
     }
 
-    /// User-pulled payout authorized by a TWO-SIGNATURE voucher — no per-user
-    /// balance is ever stored on-chain, so the relayer pays zero rent and
-    /// zero fees for claims.
-    ///
-    /// Flow: the backend looks up the user's total claimable winnings in its
-    /// own books (settlement + harvest data), builds this instruction with
-    /// that exact `amount`, PARTIALLY SIGNS it with the admin key, and hands
-    /// it to the frontend. The user counter-signs in their wallet (also
-    /// paying the tx fee) and submits. USDC moves vault → user ATA directly.
-    ///
-    /// Why `amount` can be trusted: the admin co-signature. A user alone
-    /// cannot invent a voucher (admin constraint fails); a stolen voucher
-    /// pays only the wallet named in it, since the destination is the
-    /// signer's own canonical ATA — it cannot be redirected.
-    ///
-    /// Replay safety: a Solana transaction executes at most once and its
-    /// blockhash expires in ~60s, so a landed or expired voucher is dead.
-    /// What the chain CANNOT see is double-ISSUANCE — the backend must never
-    /// have two live unconfirmed vouchers out for the same user (one-live-
-    /// voucher-per-user discipline, enforced off-chain).
-    ///
-    /// Gated on is_lords_pot_paused: pause is the protocol-wide emergency
-    /// brake and freezes purchases AND claims. A voucher issued just before a
-    /// pause reverts cleanly and dies at blockhash expiry — no stuck state.
-    /// Only withdraw_vault_funds is exempt from the pause (evacuation lever).
     pub fn claim_winnings(ctx: Context<ClaimWinnings>, amount: u64) -> Result<()> {
         require!(amount > 0, LordsPotError::InvalidAmount);
-
-        // Policy ceiling, independent of the vault's balance. The solvency check
-        // below only asks "can the vault afford this?" — which an absurd amount
-        // originating upstream (bad prize-tier payload, settlement bug) would
-        // happily pass right up to draining the vault. This asks the different,
-        // necessary question: "is this amount plausible at all?"
         require!(
             amount <= ctx.accounts.lords_pot_state.max_claim_amount,
             LordsPotError::ClaimExceedsMaxAmount
         );
-
-        // Explicit solvency check for a clean, named error. The SPL token
-        // program would reject an overdraw anyway — this fails faster and
-        // tells ops exactly what is wrong (vault needs a refill, user is fine).
         require!(
             ctx.accounts.vault_usdc_account.amount >= amount,
             LordsPotError::InsufficientVaultFunds
@@ -440,14 +380,15 @@ pub mod solana_smart_contracts {
         Ok(())
     }
 
-    /// Admin-only withdrawal from the vault USDC ATA to any USDC token account.
-    /// Three uses: recovering devnet USDC after testing, production treasury
-    /// rebalancing (CCTP bridging of the Solana/Base imbalance), and emergency
-    /// evacuation of funds.
+    /// Move USDC out of the vault. Used for recovering devnet funds, treasury
+    /// rebalancing (CCTP bridging the Solana/Base imbalance), and emergencies.
     ///
-    /// Deliberately NOT gated on is_lords_pot_paused: this is the evacuation
-    /// lever — it must keep working mid-incident, precisely when everything
-    /// else (purchases, claims) is frozen by the pause.
+    /// Requires the TREASURY key, not `admin`. This is the most powerful
+    /// instruction here — uncapped, moves the whole vault — so it's exactly
+    /// what the always-online hot key must not be able to do. Keep it cold.
+    ///
+    /// NOT blocked by the pause: this is the evacuation lever, it has to work
+    /// mid-incident when everything else is frozen.
     pub fn withdraw_vault_funds(ctx: Context<WithdrawVaultFunds>, amount: u64) -> Result<()> {
         require!(amount > 0, LordsPotError::InvalidAmount);
         require!(
@@ -473,7 +414,7 @@ pub mod solana_smart_contracts {
         token_interface::transfer_checked(cpi_context, amount, decimals)?;
 
         emit!(VaultWithdrawalEvent {
-            admin: ctx.accounts.admin.key(),
+            admin: ctx.accounts.treasury.key(),
             destination: ctx.accounts.destination_usdc_account.key(),
             amount,
             timestamp: Clock::get()?.unix_timestamp,
@@ -513,11 +454,12 @@ pub struct VaultWithdrawalEvent {
 
 // --- CONTEXT DEFINITIONS ---
 
-// WARNING : Before calling this function 
-// make sure `fee_recipient` has > 0 USDC already, or else buy_tickets() will revert for buyers
+// * WARNING : Before calling this function 
+// * make sure `LordsPotState.fee_recipient` has ATA already created, or else buy_tickets() will revert for buyers
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(mut, address = ADMIN_PUBKEY @ LordsPotError::Unauthorized)]
+
+    #[account(mut)]
     pub signer: Signer<'info>,
 
     #[account(
@@ -536,7 +478,7 @@ pub struct Initialize<'info> {
     pub vault_authority: SystemAccount<'info>,
 
     #[account(
-        init_if_needed, // ! while deploying change it to init and simplify the `Cargo.toml` as well !
+        init, 
         payer = signer,
         associated_token::mint = usdc_mint,
         associated_token::authority = vault_authority,
@@ -577,8 +519,8 @@ pub struct BuyTicket<'info> {
     )]
     pub vault_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
-    // WARNING : Before calling this function 
-    // make sure `fee_recipient` has > 0 USDC already, or else buy_tickets() will revert for buyers
+    // * WARNING : Before calling this function, make sure `fee_recipient`'s USDC
+    // * ATA has been CREATED, or else buy_ticket() will revert for every buyer.
     #[account(
         mut,
         associated_token::mint = usdc_mint,
@@ -602,22 +544,10 @@ pub struct BuyTicket<'info> {
 
 #[derive(Accounts)]
 pub struct MigrateState<'info> {
-    /// Pays the rent top-up for the larger account, and must be the admin
-    /// currently stored in the account (verified in the handler against the v1
-    /// layout — it cannot be read declaratively here, which is the whole
-    /// reason this instruction exists).
     #[account(mut)]
     pub admin: Signer<'info>,
 
-    /// CHECK: Intentionally raw — see the extensive rationale on migrate_state.
-    /// A typed wrapper cannot be used because the stored bytes do not match the
-    /// current struct yet. Address is pinned by the PDA seeds below and
-    /// ownership by the `owner` constraint; size, discriminator and admin
-    /// authority are all verified in the handler before anything is written.
-
-    // This is crucial. Usually, Anchor checks if a file matches the blueprint perfectly. 
-    // But because this is an old version of the file, it won't match the new blueprint yet! 
-    // So we tell Anchor: "Don't check this automatically, it will crash. I will check it manually in the code.
+    /// CHECK: A typed wrapper cannot be used because the stored bytes do not match the current struct yet
     #[account(
         mut,
         seeds = [b"lords_pot_state"],
@@ -632,12 +562,28 @@ pub struct MigrateState<'info> {
 
 
 #[derive(Accounts)]
+pub struct SetTreasuryAuthority<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    /// Signs to prove the key is real and controlled before the vault is handed to it.
+    pub new_treasury: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"lords_pot_state"],
+        bump = lords_pot_state.bump,
+    )]
+    pub lords_pot_state: Account<'info, LordsPotState>,
+}
+
+#[derive(Accounts)]
 pub struct SetAdmin<'info> {
-    #[account(constraint = admin.key() == lords_pot_state.admin @ LordsPotError::Unauthorized)]
+    #[account(mut, constraint = admin.key() == lords_pot_state.admin @ LordsPotError::Unauthorized)]
     pub admin: Signer<'info>,
 
-    /// Must sign — proves the incoming key is live and controlled before the
-    /// protocol is handed to it. See set_admin's docs.
+    /// Signs to prove the key is real and controlled before the protocol is
+    /// handed to it. Not `mut` — nothing is written to it and it pays nothing.
     pub new_admin: Signer<'info>,
 
     #[account(
@@ -648,8 +594,8 @@ pub struct SetAdmin<'info> {
     pub lords_pot_state: Account<'info, LordsPotState>,
 }
 
-// WARNING : Before calling this function 
-// make sure `fee_recipient` has > 0 USDC already, or else buy_tickets() will revert for buyers
+// * WARNING : Before calling this function 
+// * make sure `fee_recipient` has > 0 USDC already, or else buy_tickets() will revert for buyers
 #[derive(Accounts)]
 pub struct SetRelayConfig<'info> {
     #[account(mut, constraint = admin.key() == lords_pot_state.admin @ LordsPotError::Unauthorized)]
@@ -709,17 +655,8 @@ pub struct UpdateEpoch<'info> {
 
 #[derive(Accounts)]
 pub struct ClaimWinnings<'info> {
-
-    /// The winner receiving the payout. Must sign: proves live control of
-    /// the destination wallet and gives explicit consent. Also the fee
-    /// payer, so the relayer spends nothing on claims.
     #[account(mut)]
     pub user: Signer<'info>,
-
-    /// The backend admin key must ALSO sign this same transaction — the
-    /// co-signature is what authorizes `amount`. Neither party alone can
-    /// move a single unit: the user can't invent a voucher, and the admin
-    /// can't pay out to a wallet that didn't counter-sign.
     #[account(constraint = admin.key() == lords_pot_state.admin @ LordsPotError::Unauthorized)]
     pub admin: Signer<'info>,
 
@@ -729,12 +666,6 @@ pub struct ClaimWinnings<'info> {
         constraint = !lords_pot_state.is_lords_pot_paused @ LordsPotError::ProtocolPaused
     )]
     pub lords_pot_state: Account<'info, LordsPotState>,
-
-    // Destination is the SIGNER's own canonical ATA (derived, not passed) —
-    // a leaked voucher cannot be redirected to any other wallet.
-    // init_if_needed is PERMANENT here by design: creates the user's USDC ATA
-    // on first claim (user pays their own rent). The ATA address is canonical,
-    // so there is nothing an attacker can pre-create to hijack it.
     #[account(
         init_if_needed,  // keep this init_if_needed
         payer = user,
@@ -766,9 +697,8 @@ pub struct ClaimWinnings<'info> {
 
 #[derive(Accounts)]
 pub struct WithdrawVaultFunds<'info> {
-
-    #[account(mut, constraint = admin.key() == lords_pot_state.admin @ LordsPotError::Unauthorized)]
-    pub admin: Signer<'info>,
+    #[account(mut, constraint = treasury.key() == lords_pot_state.treasury_authority @ LordsPotError::Unauthorized)]
+    pub treasury: Signer<'info>,
 
     #[account(
         seeds = [b"lords_pot_state"],
@@ -783,7 +713,7 @@ pub struct WithdrawVaultFunds<'info> {
     )]
     pub vault_usdc_account: InterfaceAccount<'info, TokenAccount>,
 
-    // Any USDC token account the admin chooses (own ATA, treasury, CCTP
+    // Any USDC token account the treasury chooses (own ATA, treasury, CCTP
     // depositor). transfer_checked enforces the mint match at the token
     // program level too; this constraint just fails faster and clearer.
     #[account(
@@ -817,73 +747,15 @@ pub struct LordsPotState {
     pub is_lords_pot_paused: bool,
     pub admin: Pubkey,
 
-    // ------------------------------------------------------------------
-    // EVERYTHING BELOW THIS LINE WAS ADDED AFTER THE FIRST DEPLOYMENT.
-    //
-    // Field ORDER above this line is frozen forever. Borsh is positional, so
-    // the first 52 bytes of an already-deployed state account decode correctly
-    // only as long as those seven fields keep their exact order and types.
-    // migrate_state relies on precisely this: it grows the account and leaves
-    // bytes 0..52 untouched, so a live protocol keeps its admin, epoch, price
-    // and pause flag across the upgrade. New fields ALWAYS get appended here.
-    // ------------------------------------------------------------------
-
-    /// Layout version of this account. Lets any instruction — and any future
-    /// migration — tell what shape it is actually looking at instead of
-    /// assuming. Makes migrate_state idempotent: a retried migration after an
-    /// RPC timeout is a no-op rather than a second, corrupting rewrite.
     pub version: u8,
-
-    // --- Relay economics (admin-settable via set_relay_config) ---
-    //
-    // The relay fee lives HERE, on-chain, not in the frontend. It used to be a
-    // separate SPL transfer instruction the frontend bolted on next to
-    // buy_ticket, which meant anyone hand-rolling a transaction against this
-    // program could simply omit it and have their tickets relayed to Base for
-    // free while the relayer ate the real gas. Charged inside buy_ticket, it is
-    // atomic with the purchase: no fee, no tickets.
     pub relay_fee_base: u64,
     pub relay_fee_per_ticket: u64,
-
-    /// Fee destination OWNER (not its ATA). BuyTicket derives the ATA from this
-    /// field, so a caller cannot redirect the fee to a wallet of their choosing.
     pub fee_recipient: Pubkey,
-
-    /// Per-instruction ticket ceiling. Sized to the backend's Base chunk size
-    /// (config.relay.baseTicketChunkSize) so one buy_ticket instruction maps to
-    /// exactly one Base transaction — which is what makes the base+per-ticket
-    /// fee mirror the real Base cost model (a fixed ~1.2M gas overhead per Base
-    /// tx PLUS ~880k gas per ticket) at every purchase size.
     pub max_tickets_per_purchase: u8,
 
-    /// Defense-in-depth ceiling on a single claim_winnings payout.
-    ///
-    /// The two-signature voucher already makes it impossible for a USER to
-    /// invent an amount. This guards the other direction: a bad number arriving
-    /// from upstream (a malformed Megapot prize-tier payload feeding settlement,
-    /// a bug writing an absurd winAmount) would otherwise be signed by the
-    /// backend and paid out by this program in good faith, bounded only by the
-    /// vault's balance. This bounds it by policy instead.
-    ///
-    /// Fails CLOSED: a legitimate jackpot win above this ceiling cannot be
-    /// claimed until an admin raises it. That is the intended tradeoff — a
-    /// blocked payout is recoverable, an over-payout is not.
     pub max_claim_amount: u64,
-
-    /// Pre-paid headroom for future fields.
-    ///
-    /// The account is allocated larger than it currently needs, so the NEXT
-    /// field this protocol wants (a partner registry pointer, a per-partner
-    /// cap, whatever an integration demands) is carved out of this reserve by
-    /// shrinking it — no realloc, no rent top-up, no migration, no window where
-    /// the deployed code and the stored bytes disagree. That disagreement is
-    /// exactly what took the protocol down before this existed, and it is worth
-    /// 128 bytes (~0.0009 SOL of rent, once) never to repeat it.
-    ///
-    /// To consume some: shrink this array by N and add fields totalling N
-    /// bytes immediately ABOVE it. Total size is unchanged, so every existing
-    /// account stays valid and the new fields read as zero until written.
-    pub _reserved: [u8; 128],
+    pub treasury_authority: Pubkey,
+    pub _reserved: [u8; 96],
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -891,6 +763,47 @@ pub struct Ticket {
     pub normal_ball: Vec<u8>,
     pub bonus_ball: u8,
 }
+
+pub const HARD_MAX_TICKETS_PER_PURCHASE: u8 = 100;
+
+pub const STATE_VERSION: u8 = 2;
+
+const STATE_SIZE_AT_CURRENT_VERSION: usize = 238;
+
+/// Build fails if the struct changes size without the version being bumped —
+/// so the code and stored accounts can't silently disagree (which broke us once).
+/// Carving a field out of `_reserved` doesn't trip this: same total size, no
+/// migration needed. That's the point of the reserve.
+const _: () = assert!(
+    LordsPotState::INIT_SPACE == STATE_SIZE_AT_CURRENT_VERSION,
+    "LordsPotState changed size. Bump STATE_VERSION, set LEGACY_STATE_SIZE to the PREVIOUS \
+     total (8 + old field bytes), update STATE_SIZE_AT_CURRENT_VERSION, and write the migration."
+);
+
+pub const LEGACY_STATE_SIZE: usize = 60;
+
+// Offset to get admin from LordsPotState, while migration to check for
+const LEGACY_ADMIN_OFFSET: usize = 28;
+
+// make sure the treasury authority is a real wallet address, not the empty one.
+fn validate_treasury(treasury_authority: Pubkey) -> Result<()> {
+    require_keys_neq!(
+        treasury_authority,
+        Pubkey::default(),  // Pubkey::default() : 0 address in solana : 11111111111111111111111111111111
+        LordsPotError::InvalidTreasuryAuthority
+    );
+    Ok(())
+}
+
+fn validate_relay_config(max_tickets_per_purchase: u8, max_claim_amount: u64) -> Result<()> {
+    require!(
+        max_tickets_per_purchase >= 1 && max_tickets_per_purchase <= HARD_MAX_TICKETS_PER_PURCHASE,
+        LordsPotError::InvalidMaxTicketsPerPurchase
+    );
+    require!(max_claim_amount > 0, LordsPotError::InvalidMaxClaimAmount);
+    Ok(())
+}
+
 
 // --- ERROR CODES ---
 
@@ -940,37 +853,6 @@ pub enum LordsPotError {
     InvalidStateAccount,
     #[msg("The new admin is already the current admin.")]
     SameAsPreviousAdmin,
-}
-
-/// Absolute backstop, independent of admin configuration — a mis-set
-/// max_tickets_per_purchase can never widen the instruction past this.
-/// (In practice Solana's 1232-byte transaction limit binds well before this
-/// does; this exists so the ceiling is enforced by code, not by luck.)
-pub const HARD_MAX_TICKETS_PER_PURCHASE: u8 = 100;
-
-/// Current LordsPotState layout version. Bump this whenever fields are added
-/// in a way that requires migrate_state to run.
-pub const STATE_VERSION: u8 = 2;
-
-/// Size of a v1 state account: 8-byte discriminator + the seven original
-/// fields (1 + 1 + 8 + 8 + 1 + 1 + 32 = 52). This is the ONLY shape
-/// migrate_state will accept as input — anything else is either already
-/// migrated or not a state account we recognise.
-pub const LEGACY_STATE_SIZE: usize = 60;
-
-/// Byte range holding `admin` inside a v1 account: 8 (discriminator) + 20
-/// (normal_max, bonus_max, ticket_price, ongoing_epoch, bump, is_paused).
-/// Valid ONLY against a LEGACY_STATE_SIZE account, which migrate_state
-/// verifies before reading here.
-const LEGACY_ADMIN_OFFSET: usize = 28;
-
-/// Shared by initialize and set_relay_config so the two can never drift into
-/// disagreeing about what a valid configuration is.
-fn validate_relay_config(max_tickets_per_purchase: u8, max_claim_amount: u64) -> Result<()> {
-    require!(
-        max_tickets_per_purchase >= 1 && max_tickets_per_purchase <= HARD_MAX_TICKETS_PER_PURCHASE,
-        LordsPotError::InvalidMaxTicketsPerPurchase
-    );
-    require!(max_claim_amount > 0, LordsPotError::InvalidMaxClaimAmount);
-    Ok(())
+    #[msg("treasury_authority must not be the default (all-zero) pubkey.")]
+    InvalidTreasuryAuthority,
 }

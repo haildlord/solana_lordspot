@@ -37,6 +37,19 @@ async function main() {
     console.log(`🎯 Normal Balls Max    : ${state.normalMax}`);
     console.log(`⭐ Bonus Ball Max      : ${state.bonusMax}`);
     console.log(`🧬 State Account Bump  : ${state.bump}`);
+    console.log("--------------------------------------------------");
+    console.log(`🏷️  Layout Version      : v${state.version}`);
+    console.log(`💵 Relay Fee (base)    : ${state.relayFeeBase.toString()}`);
+    console.log(`💵 Relay Fee (per tkt) : ${state.relayFeePerTicket.toString()}`);
+    console.log(`📬 Fee Recipient       : ${state.feeRecipient.toBase58()}`);
+    console.log(`🎟️  Max Tickets/Ix      : ${state.maxTicketsPerPurchase}`);
+    console.log(`🛑 Max Claim Amount    : ${state.maxClaimAmount.toString()}`);
+    console.log(`🏦 Treasury Authority  : ${state.treasuryAuthority.toBase58()}`);
+    if (state.treasuryAuthority.equals(PublicKey.default)) {
+      console.log(`   ⚠️  UNSET — withdraw_vault_funds cannot be called by anyone yet.`);
+    } else if (state.treasuryAuthority.equals(state.admin)) {
+      console.log(`   ⚠️  Same as admin — fine for devnet, must differ before mainnet.`);
+    }
     console.log("==================================================\n");
 
   } catch (error) {

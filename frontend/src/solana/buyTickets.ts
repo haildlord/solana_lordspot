@@ -1,14 +1,9 @@
 import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
-import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountIdempotentInstruction,
-  createTransferCheckedInstruction,
-} from '@solana/spl-token';
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { Program, AnchorProvider } from '@coral-xyz/anchor'; // Import AnchorProvider
 import type { SolanaSmartContracts } from '../idl/lords_pot_types';
 import { getLordsPotStatePda, getVaultAuthorityPda, getVaultUsdcAta, getUserUsdcAta } from './pdas';
-import { USDC_MINT, USDC_DECIMALS, TICKET_RULES, RELAY_FEE_BASE_USDC, RELAY_FEE_PER_TICKET_USDC } from './constants';
+import { TICKET_RULES, USDC_MINT } from './constants';
 import type { StagedTicket } from './ticketUtils';
 
 /**
@@ -16,10 +11,17 @@ import type { StagedTicket } from './ticketUtils';
  * Bundles tickets into safe instruction and transaction chunk sizes to avoid
  * Anchor buffer overruns and Solana's 1232-byte transaction size limit.
  *
- * Also bundles a plain USDC transfer covering the relay fee (see constants.ts)
- * into the same transaction as the first buy_ticket instruction — atomic with
- * the purchase, computed once for the whole call so a multi-transaction batch
- * (>50 tickets) never double-charges the base fee.
+ * THE RELAY FEE IS NO LONGER BUILT HERE. It used to be a separate SPL transfer
+ * instruction bolted on beside the first buy_ticket call — which meant it was
+ * only ever paid by people going through this UI, and anyone hand-rolling a
+ * transaction against the program got their tickets relayed to Base for free
+ * at the relayer's expense. The program now charges it inside buy_ticket
+ * itself, atomically: no fee, no tickets, for every caller.
+ *
+ * All this function still does about the fee is pass the destination account
+ * (derived on-chain from LordsPotState.fee_recipient, so it cannot be pointed
+ * anywhere else) and keep instructions within the on-chain per-instruction
+ * ticket ceiling.
  */
 export async function buyTickets(
   program: Program<SolanaSmartContracts>,
@@ -42,12 +44,21 @@ export async function buyTickets(
   const buyerUsdcAccount = getUserUsdcAta(buyer);
 
   // 1. Define safe limits
-  const TICKETS_PER_IX = 25; // Safe limit for Anchor's instruction buffer
-  const TICKETS_PER_TX = 50; // Safe limit for Solana's 1232-byte transaction limit (2 instructions per tx)
+  // Capped by the program's own max_tickets_per_purchase — a larger instruction
+  // reverts on-chain, not just client-side.
+  const TICKETS_PER_IX = TICKET_RULES.MAX_TICKETS_PER_IX;
+  // ONE instruction per transaction. Instructions do NOT get their own byte
+  // budget — every instruction in a transaction shares the same 1232-byte
+  // ceiling, and each one adds ~13 bytes of its own header on top. At 65
+  // tickets an instruction already fills most of that ceiling, so a second one
+  // would overflow it. Bigger purchases therefore become more TRANSACTIONS,
+  // which sendAll below still presents as a single wallet approval.
+  const TICKETS_PER_TX = TICKETS_PER_IX;
 
   const transactionsToBundle: { tx: Transaction; signers: any[] }[] = [];
 
-  const totalFee = RELAY_FEE_BASE_USDC + RELAY_FEE_PER_TICKET_USDC * tickets.length;
+  // Derived from the on-chain fee_recipient — the program re-derives this same
+  // ATA and rejects anything else, so this cannot be redirected from here.
   const feeRecipientUsdcAccount = getUserUsdcAta(feeRecipient);
 
   // 2. Loop through tickets and build multiple transactions if needed
@@ -55,31 +66,12 @@ export async function buyTickets(
     const txTickets = tickets.slice(i, i + TICKETS_PER_TX);
     const transaction = new Transaction();
 
-    // Relay fee — bundled once, into the first transaction only, so a
-    // multi-transaction batch (>50 tickets) never double-charges it.
-    if (i === 0) {
-      transaction.add(
-        createAssociatedTokenAccountIdempotentInstruction(
-          buyer,
-          feeRecipientUsdcAccount,
-          feeRecipient,
-          USDC_MINT
-        ),
-        createTransferCheckedInstruction(
-          buyerUsdcAccount,
-          USDC_MINT,
-          feeRecipientUsdcAccount,
-          buyer,
-          totalFee,
-          USDC_DECIMALS
-        )
-      );
-    }
-
-    // 3. Inside each transaction, pack up to 2 instructions (25 tickets each)
+    // 3. Inside each transaction, pack instructions of TICKETS_PER_IX each.
+    // Each instruction pays its own base fee on-chain — deliberate, since each
+    // one is relayed as its own Base transaction with its own fixed gas cost.
     for (let j = 0; j < txTickets.length; j += TICKETS_PER_IX) {
       const ixTickets = txTickets.slice(j, j + TICKETS_PER_IX);
-      
+
       const formattedChunk = ixTickets.map((t) => ({
         normalBall: Buffer.from(t.normals),
         bonusBall: t.bonus!, // guarded non-null above — every ticket here is already complete
@@ -93,6 +85,7 @@ export async function buyTickets(
           lordsPotState,
           buyerUsdcAccount,
           vaultUsdcAccount,
+          feeRecipientUsdcAccount,
           vaultAuthority,
           usdcMint: USDC_MINT,
           systemProgram: SystemProgram.programId,

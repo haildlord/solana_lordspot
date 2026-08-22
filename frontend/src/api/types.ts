@@ -133,17 +133,20 @@ export interface ClaimSummaryResponse {
   totalPaidOutUsdc: string;
   pendingVoucher: {
     amountUsdc: string;
-    txSignature: string | null;
     createdAt: string;
   } | null;
 }
 
+/**
+ * No txSignature: the winner's wallet is the voucher's fee payer, so the
+ * transaction signature does not exist until they sign. The backend discovers
+ * it from the chain afterwards (payoutConfirmer) rather than being told.
+ */
 export interface ClaimVoucherResponse {
   reused: boolean;
   claimId: string;
   amountUsdc: string;
   transactionBase64?: string;
-  txSignature: string;
   lastValidBlockHeight?: number;
   note: string;
 }

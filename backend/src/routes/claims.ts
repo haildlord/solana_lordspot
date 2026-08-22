@@ -74,7 +74,10 @@ router.get('/summary', async (req: Request, res: Response) => {
     }),
     prisma.payoutClaim.findFirst({
       where: { wallet, status: 'PENDING' },
-      select: { id: true, amountUsdc: true, txSignature: true, createdAt: true },
+      // No txSignature here: the user is the fee payer, so a PENDING voucher
+      // has no signature yet — the confirmer discovers and stamps it only once
+      // the transaction actually lands.
+      select: { id: true, amountUsdc: true, createdAt: true },
     }),
     prisma.ticket.aggregate({
       _sum: { winAmount: true },
@@ -89,7 +92,6 @@ router.get('/summary', async (req: Request, res: Response) => {
     pendingVoucher: pendingVoucher
       ? {
           amountUsdc: pendingVoucher.amountUsdc.toString(),
-          txSignature: pendingVoucher.txSignature,
           createdAt: pendingVoucher.createdAt,
         }
       : null,
@@ -109,17 +111,24 @@ router.post('/voucher', async (req: Request, res: Response) => {
 
   // ONE LIVE VOUCHER: an unresolved PENDING voucher is returned as-is. Only
   // the confirmer retires it (CONFIRMED / EXPIRED / FAILED) — never this route.
+  //
+  // Keyed on lastValidBlockHeight, NOT txSignature: the user is the voucher's
+  // fee payer now, so no signature exists at issuance (it is discovered later
+  // by the confirmer). lastValidBlockHeight is what gets stamped the moment a
+  // voucher is actually handed out, making it the correct "this one is live"
+  // marker. Keying on txSignature here would match nothing and mint a second
+  // live voucher per request — two independently-landable payouts for the same
+  // tickets, since claim_winnings has no on-chain replay guard of its own.
   const existing = await prisma.payoutClaim.findFirst({
-    where: { wallet, status: 'PENDING', txSignature: { not: null } },
+    where: { wallet, status: 'PENDING', lastValidBlockHeight: { not: null } },
   });
-  
+
   if (existing) {
     return res.status(200).json({
       reused: true,
       claimId: existing.id,
       amountUsdc: existing.amountUsdc.toString(),
-      txSignature: existing.txSignature,
-      note: 'A live voucher already exists — sign and submit this one, or wait ~1 min for it to expire.',
+      note: 'A live voucher already exists — sign and submit the one you were given, or wait ~1 min for it to expire.',
     });
   }
 
@@ -154,6 +163,46 @@ router.post('/voucher', async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Nothing to claim for this wallet' });
   }
 
+  // PLAUSIBILITY CEILING — the last check before this service co-signs a
+  // transfer of real funds.
+  //
+  // Everything upstream of here is trusted arithmetic: Megapot's prize-tier
+  // payload → settlement's tier math → winAmount → this sum. A bad number
+  // anywhere in that chain arrives looking exactly like a good one, and the
+  // program would pay it out in good faith (its only other guard is vault
+  // solvency, i.e. "can we afford it", not "is it sane"). The on-chain
+  // max_claim_amount is the real enforcement; this mirrors it so the failure
+  // surfaces as a logged alert and a clean 409 instead of an opaque revert.
+  try {
+    const onChain = await solanaService.getOnChainState();
+    const ceiling = BigInt(onChain.maxClaimAmount.toString());
+
+    if (amount > ceiling) {
+      await prisma.ticket.updateMany({
+        where: { payoutClaimId: claim.id },
+        data: { payoutClaimId: null },
+      });
+      await prisma.payoutClaim.delete({ where: { id: claim.id } });
+
+      console.error(
+        `[ALERT][claims] Refused to sign an implausible payout for ${wallet}: ${amount} units exceeds the on-chain ceiling of ${ceiling}. ` +
+        `This is a settlement/pricing bug, NOT a user action — the amount is derived entirely from our own DB. Investigate before raising the ceiling.`
+      );
+      return res.status(409).json({
+        error: 'Claim amount exceeds the protocol payout ceiling — this has been flagged for review, please contact support.',
+      });
+    }
+  } catch (err: any) {
+    console.error('[claims] Could not read on-chain claim ceiling:', err?.message ?? err);
+    await prisma.ticket.updateMany({
+      where: { payoutClaimId: claim.id },
+      data: { payoutClaimId: null },
+    });
+    await prisma.payoutClaim.delete({ where: { id: claim.id } });
+    // Fail closed: unable to verify the ceiling means unable to justify signing.
+    return res.status(503).json({ error: 'Unable to verify payout limits right now — try again shortly' });
+  }
+
   try {
     const voucher = await solanaService.buildClaimVoucher(wallet, amount);
 
@@ -161,21 +210,19 @@ router.post('/voucher', async (req: Request, res: Response) => {
       where: { id: claim.id },
       data: {
         amountUsdc: amount,
-        txSignature: voucher.txSignature,
         lastValidBlockHeight: BigInt(voucher.lastValidBlockHeight),
       },
     });
 
-    console.log(`[claims] Voucher issued: ${wallet.slice(0, 8)}… → ${amount} units, sig ${voucher.txSignature.slice(0, 12)}…`);
+    console.log(`[claims] Voucher issued: ${wallet.slice(0, 8)}… → ${amount} units (valid to block ${voucher.lastValidBlockHeight})`);
 
     return res.status(201).json({
       reused: false,
       claimId: claim.id,
       amountUsdc: amount.toString(),
       transactionBase64: voucher.transactionBase64,
-      txSignature: voucher.txSignature,
       lastValidBlockHeight: voucher.lastValidBlockHeight,
-      note: 'Counter-sign with the winner wallet and submit within ~60s.',
+      note: 'Counter-sign with the winner wallet and submit within ~60s. The winner wallet pays the network fee.',
     });
   } catch (err: any) {
     // Signing failed — release everything immediately; nothing was handed out.

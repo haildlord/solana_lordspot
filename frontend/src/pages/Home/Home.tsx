@@ -6,7 +6,7 @@ import { useOnChainState } from '../../solana/useOnChainState';
 import { useLordsPotProgram } from '../../solana/program';
 import { buyTickets } from '../../solana/buyTickets';
 import { isTicketComplete } from '../../solana/ticketUtils';
-import { RELAY_FEE_BASE_USDC, RELAY_FEE_PER_TICKET_USDC } from '../../solana/constants';
+import { calculateRelayFee } from '../../solana/constants';
 import { usdcToNumber } from '../../lib/format';
 import { CountdownBadge } from '../../components/CountdownBadge/CountdownBadge';
 import { NumberBall } from '../../components/NumberBall/NumberBall';
@@ -48,13 +48,11 @@ export function Home() {
   const bonusMax = onChain?.bonusMax ?? 10;
   const ticketPrice = onChain ? usdcToNumber(onChain.ticketPriceUsdc) : 1;
   const ticketSubtotal = stagedTickets.length * ticketPrice;
-  const relayFee =
-    stagedTickets.length > 0
-      ? usdcToNumber(RELAY_FEE_BASE_USDC + RELAY_FEE_PER_TICKET_USDC * stagedTickets.length)
-      : 0;
+  const relayFee = usdcToNumber(calculateRelayFee(stagedTickets.length));
   const totalCost = ticketSubtotal + relayFee;
   const isPaused = onChain?.isPaused ?? protocolState?.isPaused ?? false;
 
+  // atCap is used just to disable buttons
   const atCap = stagedTickets.length >= MAX_STAGED_TICKETS;
   const allComplete =
     stagedTickets.length > 0 && stagedTickets.every((t) => isTicketComplete(t, normalMax, bonusMax));
@@ -62,6 +60,7 @@ export function Home() {
   // Local text buffer for the count input — see the input's own comment for
   // why this can't just be a plain `value={stagedTickets.length}` binding.
   const [countText, setCountText] = useState(() => String(stagedTickets.length));
+
   useEffect(() => {
     setCountText(String(stagedTickets.length));
   }, [stagedTickets.length]);
@@ -239,14 +238,16 @@ export function Home() {
               </div>
               <div className={styles.costRow}>
                 <span>Relay fee</span>
-                <span>${relayFee.toFixed(3)}</span>
+                <span>{relayFee === 0 ? 'FREE' : `$${relayFee.toFixed(3)}`}</span>
               </div>
               <div className={`${styles.costRow} ${styles.costTotal}`}>
                 <span>Total</span>
-                <span>${totalCost.toFixed(3)}</span>
+                <span>${totalCost.toFixed(2)}</span>
               </div>
               <p className={styles.costHint}>
-                ≈ ${(relayFee / stagedTickets.length).toFixed(3)}/ticket relay cost at this count — stage more tickets in one purchase to spread it thinner.
+                {relayFee === 0
+                  ? 'No relay fee, no bridging fee — you pay the ticket price and nothing else.'
+                  : `≈ $${(relayFee / stagedTickets.length).toFixed(3)}/ticket relay cost at this count — stage more tickets in one purchase to spread it thinner.`}
               </p>
             </div>
           )}
