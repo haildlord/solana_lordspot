@@ -557,28 +557,47 @@ not even ones that look stale. If one seems wrong, say so in chat; don't
 
 ---
 
-## 🔴 Build-blocking — fix this first, nothing else matters until you do
+## ✅ Build-blocking (RESOLVED) — `mainnet-beta` feature now exists
 
-**The `mainnet-beta` Cargo feature does not exist.** `constants.rs` switches
-the USDC mint on `#[cfg(feature = "mainnet-beta")]`, but that feature is
-never declared in `Cargo.toml`'s `[features]` block. A normal build can only
-ever satisfy the `#[cfg(not(...))]` branch — the devnet mint. Passing
-`--features mainnet-beta` to `cargo`/`anchor build` currently **errors**
-("does not contain this feature"), it does not build the mainnet branch.
+**Was:** `constants.rs` switched the USDC mint on
+`#[cfg(feature = "mainnet-beta")]`, but that feature was never declared in
+`Cargo.toml`'s `[features]` block. Every build, regardless of flags,
+silently compiled the devnet branch — `--features mainnet-beta` used to
+**error outright** ("does not contain this feature"), not build the
+mainnet branch.
 
-Until this is fixed, there is no way to produce a mainnet binary at all,
-regardless of what env vars or deploy flags you pass.
+**Fixed:** `mainnet-beta = []` added to
+`programs/solana_smart_contracts/Cargo.toml`'s `[features]` block. Both
+build configurations now compile clean:
+```
+cargo build-sbf --manifest-path programs/solana_smart_contracts/Cargo.toml                        # devnet mint
+cargo build-sbf --manifest-path programs/solana_smart_contracts/Cargo.toml --features mainnet-beta # real USDC mint
+```
 
-- **Where:** `programs/solana_smart_contracts/Cargo.toml` (`[features]`
-  block, currently missing `mainnet-beta = []`) and
-  `programs/solana_smart_contracts/src/constants.rs:3-9` (the `cfg` switch
-  itself, which is otherwise correct).
-- **Fix:** add `mainnet-beta = []` to `[features]`, then build with
-  `--features mainnet-beta` and confirm via the compiled program (or a quick
-  `cfg`-print) that the mainnet USDC mint (`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`)
-  actually got compiled in.
-- Not applied yet — deliberately left alone per your call to defer this until
-  mainnet planning actually starts.
+**Proven, not assumed** — binary byte-inspection turned out to be the wrong
+tool here (the SBF compiler loads the 32-byte pubkey as four interleaved
+8-byte `lddw` immediates, not a contiguous data blob, so grepping the
+compiled `.so` for the raw bytes finds nothing either way and would have
+been a false negative). Instead, `constants.rs` now carries a permanent
+`#[cfg(test)]` regression pair that exercises the actual Rust value under
+each feature configuration:
+
+```
+cargo test                        # -> default_build_uses_devnet_mint ... ok
+cargo test --features mainnet-beta # -> mainnet_beta_build_uses_real_usdc_mint ... ok
+```
+
+Each command runs a *different* test (only one half of the `cfg`-gated pair
+compiles per run) — that's the actual proof the switch works, not just that
+some value exists. Left in place permanently: this is exactly the class of
+bug (a feature flag silently not applying) that's cheap to guard against
+forever and expensive to rediscover under deploy pressure.
+
+**Still true, and still your job when the day comes:** `cargo build-sbf`
+alone does not know which config you deployed — always pass
+`--features mainnet-beta` explicitly for the real deploy, and confirm via
+`cargo test --features mainnet-beta` immediately beforehand as a final gate,
+since a bare `cargo build-sbf` will silently hand you the devnet binary.
 
 ---
 
@@ -759,7 +778,7 @@ harvest will fail to encode.
 
 | What | Currently | Needs to become |
 |---|---|---|
-| Solana state's USDC mint | Devnet mint, hardcoded in `constants.rs` (see the build-blocking item above) | Mainnet mint, once the Cargo feature is fixed and built with it |
+| Solana state's USDC mint | Devnet mint by default — the `mainnet-beta` Cargo feature exists now (see resolved item above), but you must still remember to pass `--features mainnet-beta` at deploy time | Real USDC mint, once built with that flag |
 | `Anchor.toml` `[provider] cluster` | A devnet Helius URL **with a real API key committed in plaintext** | Your mainnet Helius (or other) RPC endpoint. Also worth rotating that devnet key at some point simply as good hygiene — it's sitting in git history regardless of what the file says today. |
 | `frontend/src/solana/constants.ts` `HELIUS_RPC_URL` | Hardcodes the `devnet.` subdomain literally in the template string; only the API key comes from `VITE_HELIUS_API_KEY` | Edit the literal string, not just the env var — the env var alone won't switch clusters |
 | `VITE_USDC_MINT` (Vercel env) | Devnet mint | Mainnet mint — flows correctly into every ATA derivation and the balance hook once changed (this part *is* just an env var, verified this session) |

@@ -10,6 +10,7 @@ name = "solana_smart_contracts"
 
 [features]
 default = []
+mainnet-beta = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
