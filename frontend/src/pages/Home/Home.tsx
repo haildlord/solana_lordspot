@@ -3,6 +3,7 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { useTicketBuilderStore, MAX_STAGED_TICKETS } from '../../store/ticketBuilderStore';
 import { useProtocolState } from '../../api/hooks';
 import { useOnChainState } from '../../solana/useOnChainState';
+import { useUsdcBalance } from '../../solana/useUsdcBalance';
 import { useLordsPotProgram } from '../../solana/program';
 import { buyTickets } from '../../solana/buyTickets';
 import { isTicketComplete } from '../../solana/ticketUtils';
@@ -53,6 +54,21 @@ export function Home() {
   const relayFee = usdcToNumber(calculateRelayFee(stagedTickets.length));
   const totalCost = ticketSubtotal + relayFee;
   const isPaused = onChain?.isPaused ?? protocolState?.isPaused ?? false;
+
+  // Balance gate. Comparing in BASE UNITS (bigint), never in floats — a float
+  // comparison of dollars can call a purchase affordable when it is short by a
+  // fraction of a cent, which then reverts on-chain after the user has already
+  // approved it in their wallet.
+  //
+  // Advisory only: the on-chain transfer is still the real check. This just
+  // moves the failure from "wallet popup, sign, then revert" to a disabled
+  // button that says exactly what's wrong.
+  const { data: usdcBalance } = useUsdcBalance(publicKey);
+  const totalCostUnits =
+    BigInt(stagedTickets.length) * BigInt(onChain?.ticketPriceUsdc ?? 1_000_000) +
+    BigInt(calculateRelayFee(stagedTickets.length));
+  // Undefined balance = still loading; don't block the button on a pending read.
+  const cannotAfford = usdcBalance !== undefined && stagedTickets.length > 0 && usdcBalance < totalCostUnits;
 
   // atCap is used just to disable buttons
   const atCap = stagedTickets.length >= MAX_STAGED_TICKETS;
@@ -271,6 +287,12 @@ export function Home() {
                 <span>Total</span>
                 <span>${totalCost.toFixed(2)}</span>
               </div>
+              {cannotAfford && (
+                <div className={styles.costShortfall}>
+                  Not enough USDC — you have ${usdcToNumber(usdcBalance ?? 0n).toFixed(2)}, need $
+                  {totalCost.toFixed(2)}.
+                </div>
+              )}
               <p className={styles.costHint}>
                 {relayFee === 0
                   ? 'No relay fee, no bridging fee — you pay the ticket price and nothing else.'
@@ -281,14 +303,18 @@ export function Home() {
 
           <button
             className={styles.buyButton}
-            disabled={!allComplete || txState !== 'idle' || isPaused || !program || !onChain?.admin}
+            disabled={
+              !allComplete || txState !== 'idle' || isPaused || !program || !onChain?.admin || cannotAfford
+            }
             onClick={handleBuy}
           >
             {stagedTickets.length === 0
               ? 'Set a count to buy'
               : !allComplete
                 ? 'Finish selecting numbers'
-                : `Buy ${stagedTickets.length} Ticket${stagedTickets.length === 1 ? '' : 's'} — $${totalCost.toFixed(2)}`}
+                : cannotAfford
+                  ? `Need $${totalCost.toFixed(2)} — you have $${usdcToNumber(usdcBalance ?? 0n).toFixed(2)}`
+                  : `Buy ${stagedTickets.length} Ticket${stagedTickets.length === 1 ? '' : 's'} — $${totalCost.toFixed(2)}`}
           </button>
         </WalletGate>
       </section>

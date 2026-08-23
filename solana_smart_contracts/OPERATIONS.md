@@ -27,9 +27,10 @@ it on a server. Compromise = total loss.
   ```
 - [ ] You have decided your **treasury wallet** — a genuinely different key
   ```
-  from admin, ideally a hardware wallet or Squads vault (see the Mainnet
-  Checklist at the bottom). Passing the same wallet as both is allowed by
-  the program but defeats the entire point of the split.
+  from admin, ideally a hardware wallet or Squads vault (see "Key & authority
+  separation" in the Pre-Mainnet Master Checklist at the bottom). Passing the
+  same wallet as both is allowed by the program but defeats the entire point
+  of the split.
   ```
 - [ ] The **fee_recipient**'s USDC associated token account (ATA) already
   ```
@@ -50,7 +51,8 @@ it on a server. Compromise = total loss.
 - [ ] You know `max_claim_amount` — must be set ABOVE the real maximum possible
   ```
   Megapot payout, or a legitimate big winner gets blocked from claiming.
-  (See the "Sizing max_claim_amount" note below.)
+  (See "Values to re-check before flipping the switch" in the Pre-Mainnet
+  Master Checklist at the bottom of this file.)
   ```
 
 
@@ -540,4 +542,306 @@ Moves USDC from the vault to the named destination. Works even while paused
   ```
 
 ---
+
+# Pre-Mainnet Master Checklist
+
+Everything below was found by a full repo sweep done specifically to prepare
+for mainnet. It is organized by "what kind of mistake this prevents," not by
+file — deployment day goes file-by-file already; this is meant to be read
+once, end to end, before that day.
+
+**Ground rule for this whole section: comments starting with `// !`, `// *`,
+or `// ->` are the repo owner's own annotations. Never edit or remove them —
+not even ones that look stale. If one seems wrong, say so in chat; don't
+"fix" it in the file.**
+
+---
+
+## 🔴 Build-blocking — fix this first, nothing else matters until you do
+
+**The `mainnet-beta` Cargo feature does not exist.** `constants.rs` switches
+the USDC mint on `#[cfg(feature = "mainnet-beta")]`, but that feature is
+never declared in `Cargo.toml`'s `[features]` block. A normal build can only
+ever satisfy the `#[cfg(not(...))]` branch — the devnet mint. Passing
+`--features mainnet-beta` to `cargo`/`anchor build` currently **errors**
+("does not contain this feature"), it does not build the mainnet branch.
+
+Until this is fixed, there is no way to produce a mainnet binary at all,
+regardless of what env vars or deploy flags you pass.
+
+- **Where:** `programs/solana_smart_contracts/Cargo.toml` (`[features]`
+  block, currently missing `mainnet-beta = []`) and
+  `programs/solana_smart_contracts/src/constants.rs:3-9` (the `cfg` switch
+  itself, which is otherwise correct).
+- **Fix:** add `mainnet-beta = []` to `[features]`, then build with
+  `--features mainnet-beta` and confirm via the compiled program (or a quick
+  `cfg`-print) that the mainnet USDC mint (`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`)
+  actually got compiled in.
+- Not applied yet — deliberately left alone per your call to defer this until
+  mainnet planning actually starts.
+
+---
+
+## Marker comment index
+
+Three annotation styles show up across this codebase, always meaning "the
+owner left a note here, read it before touching this code":
+
+| Marker | General meaning here |
+|---|---|
+| `// !` | A specific pre-deployment action item — usually "change X before mainnet" or a measured value worth remembering (e.g. a real CU consumption number). |
+| `// *` | A warning about a dangerous operation or a precondition that must hold before calling a function — several are the *same* fee-recipient-ATA warning repeated at each place it matters. |
+| `// ->` | Marks a TESTING-ONLY code path currently active, paired with the PRODUCTION path sitting right next to it, commented out. This is the biggest category, concentrated in `backend/src/workers/harvestWorker.ts`, `backend/src/services/baseService.ts`, and `base_smart_contracts/src/LordsPotBaseVault.sol`. |
+
+File-level index — where each style actually appears (not line numbers,
+since those drift; grep for the marker in-file when you get there):
+
+| File | Markers present | Theme |
+|---|---|---|
+| `solana_smart_contracts/programs/solana_smart_contracts/src/lib.rs` | `// *` | Fee-recipient-ATA warnings on `initialize`, `migrate_state`, `set_relay_config`, and the `BuyTicket`/`Initialize` account structs. |
+| `solana_smart_contracts/migrations/deploy.ts` | `// !` | Treasury-authority-must-change-before-mainnet; a recorded CU measurement. |
+| `solana_smart_contracts/tests/buyTickets.ts` | `// !` | A recorded CU measurement (informational only). |
+| `backend/src/workers/harvestWorker.ts` | `// ->`, plus a `=== TESTING ONLY ===` block header | The single largest concentration — see "Testing-only code paths" below. Nearly every `// ->` in the repo not on the Base contract itself is in this one file. |
+| `backend/src/services/baseService.ts` | `// ->` | `tempProvider`/`tempURL` plus commented-out production `claimWinnings` signatures. |
+| `backend/src/lib/config.ts` | `// ->` | `tempURL` field, paired with `baseService.ts` above. |
+| `backend/src/services/megapotService.ts` | `// ->` | Hardcoded Megapot contract address instead of reading `config.base.megapotJackpotAddress`; a hardcoded jackpot-stats fallback with the real Dune-backed logic commented out beside it. |
+| `backend/src/workers/baseConfirmer.ts` | `// !`, `// *`, `// ->` | Informational RPC-method labels and two type-mismatch notes — none are pre-mainnet action items, just left as reading aids. |
+| `backend/src/routes/webhook.ts` | `// !` | Explains a BullMQ job-id constraint — informational, not an action item. |
+| `base_smart_contracts/src/LordsPotBaseVault.sol` | `// ->` | The real single-argument `claimWinnings` (interface + implementation) is fully commented out; a 5-argument TESTING-shaped version matching `MockJackpot` is what's actually live. |
+
+---
+
+## 🔑 Key & authority separation
+
+### Solana — already built, not yet exercised
+The program already supports everything needed (`set_admin`,
+`set_treasury_authority`, hot/cold split enforced on-chain). What's still
+outstanding is *using* it for real before mainnet:
+
+- [ ] `TREASURY_AUTHORITY` in `migrations/deploy.ts` currently defaults to
+  the same key as admin/deployer (`// !` marked). Before mainnet this must
+  become a real cold key (hardware wallet or Squads vault) — see
+  `set_treasury_authority` above for the rotation call.
+- [ ] The program's **upgrade authority** is currently whatever key signs
+  deploys (`Anchor.toml`'s `wallet`, or your `deployer-keypair.json`) — no
+  Squads multisig is wired in anywhere. Squads is free (open-source
+  protocol, you only pay normal Solana network fees). Move it to Squads
+  before mainnet: `solana program write-buffer` your built `.so` into a
+  buffer keypair you keep, `solana program set-buffer-authority
+  <BUFFER_ADDRESS> --new-buffer-authority <SQUADS_VAULT_ADDRESS>`, then
+  propose/approve/execute the upgrade in the Squads UI (pointing at the
+  Vault account address, not the multisig address itself). After this,
+  `anchor program deploy` with your old keypair stops working — every future
+  upgrade goes through that same write-buffer → Squads-UI flow, so it's
+  worth rehearsing on devnet before you need it for real. This does NOT
+  affect `state.admin`'s day-to-day signing (pause/resume/claim-signing
+  stays a single hot key, unaffected by this change) — only who can replace
+  the program's bytecode.
+- [ ] `runbooks/deployment/signers.mainnet.tx` already has an `"authority"`
+  signer template, but its `expected_address` line is commented out and it's
+  typed as a plain `svm::web_wallet`, not a multisig signer. Fill this in
+  once the Squads vault exists, so the runbook actually enforces the right
+  key is used.
+
+### Base — NOT yet built, this is new
+Unlike Solana, **the Base vault has no hot/cold split at all today.**
+`script/DeployVault.s.sol` derives both the vault's `Ownable` owner and the
+`relayer` address from the exact same env var,
+`RELAYER_BASE_SIGNER_PRIVATEKEY`:
+
+```solidity
+uint256 ownerPrivateKey = vm.envUint("RELAYER_BASE_SIGNER_PRIVATEKEY");
+address owner = vm.addr(ownerPrivateKey);
+uint256 relayerPrivateKey = vm.envUint("RELAYER_BASE_SIGNER_PRIVATEKEY");
+address relayer = vm.addr(relayerPrivateKey);
+```
+
+That one key — which lives in the backend server and auto-signs
+`buyTickets`/`claimWinnings` constantly — is *also* the `onlyOwner` for:
+
+- `withdrawUsdc(address, uint256)` — can drain the entire vault to any address, uncapped
+- `pause()` / `unPause()`
+- `setVaultRelayer(address)` — can replace the relayer itself
+- `setVaultMegapotAddress(address)` — can repoint the vault at an arbitrary contract (this exact function is what points it at `MockJackpot` during local testing)
+- `setVaultUsdcAddress(address)`
+
+This is the identical risk the Solana treasury split was built to close —
+here it's still wide open. A compromised relayer key on Base doesn't just
+let an attacker submit fake purchases; it hands over **total contract
+control**, including redirecting the vault at a malicious "Megapot"
+contract and then withdrawing everything.
+
+- [ ] Before mainnet, transfer `LordsPotBaseVault`'s ownership (plain
+  OpenZeppelin `Ownable.transferOwnership` — single-step, no accept phase,
+  so double-check the destination address before calling it) to a Squads
+  Safe or hardware wallet, separate from the relayer key.
+- [ ] Update the deploy script so `owner` and `relayer` are no longer the
+  same env var by construction — otherwise this will just quietly happen
+  again on the next fresh deploy.
+- [ ] Note the contract uses plain `Ownable`, not `Ownable2Step` — a typo'd
+  `transferOwnership` address has no recovery path. Verify the destination
+  extremely carefully, the same way `withdraw_vault_funds` above asks you
+  to for Solana.
+
+---
+
+## 🧪 Testing-only code paths that must become production code
+
+This is the part of the sweep with the most volume. Almost all of it is
+already fenced with `// ->` markers saying exactly what to uncomment and
+what to remove — this section is a map of *where those fences are*, not a
+restatement of what's inside them (read the actual comments in each file
+when you get there; they're more precise than a summary would be).
+
+**`backend/src/workers/harvestWorker.ts`** — by far the largest block. It
+contains an entire `=== TESTING ONLY ===`-fenced region (clearly marked at
+both ends) covering:
+- an import of `hacked_bytecode` from `backend/hacked_bytecode.ts` (used to
+  inject fake bytecode via `anvil_setCode` on a local fork) — **this import
+  is live at the top of the file even though its only use is inside the
+  commented-out block below it.** If you ever delete
+  `backend/hacked_bytecode.ts` as testing scaffolding, you must remove this
+  import in the same change, or the build breaks.
+- a `packTicketForTest()` helper fabricating winning-ticket data instead of
+  reading it from a real Megapot response
+- a commented-out real `bisectClaimable()` sitting beside the active
+  testing version
+- a commented-out real batch-claim submission path sitting beside the
+  active testing one
+
+**`backend/src/services/baseService.ts`** — `tempProvider`/`getTempProvider()`
+(explicitly `// -> remove this in production`), plus commented-out
+production-shaped `estimateClaimGas`/`submitClaimWinnings` sitting beside
+the currently-active testing-shaped versions (5 arguments, matching
+`MockJackpot`, instead of the real single-argument Megapot signature).
+
+**`backend/src/lib/config.ts`** — the `tempURL` field
+(`// -> remove this in production`), read from `BASE_RPC_URL`, paired with
+`baseService.ts`'s `tempProvider` above. Worth noting while you're in this
+file: the comment on `rpcUrl` says *"BASE_RPC_URL in production"*, but the
+field is actually sourced from `BASE_SEPOLIA_RPC_URL` / `ANVIL_RPC_URL` —
+`BASE_RPC_URL` is what feeds `tempURL` instead. Re-verify which env var
+your production `.env` actually needs once `tempURL` is removed; the
+comment and the code currently disagree with each other.
+
+**`backend/src/services/megapotService.ts`** — the real Megapot Jackpot
+contract address is hardcoded (`0x3bAe6430...`) instead of reading
+`config.base.megapotJackpotAddress`, and paired with `getTempProvider()`
+from the item above. Separately (different testing setup, not `// ->`
+marked the same way): a jackpot-stats block has real Dune-API-backed logic
+commented out, replaced with a hardcoded `jackpotsWon = 19` /
+`prizesWon = BigInt(86000)` — the comment beside it explains this was to
+avoid burning Dune API credits during development; needs the real logic
+uncommented before mainnet.
+
+**`base_smart_contracts/src/LordsPotBaseVault.sol`** — the interface and
+implementation of `claimWinnings` both have the real single-argument
+production version fully commented out, with a 5-argument testing version
+(matching `test/mocks/MockJackpot.sol`'s simplified signature) actually
+live. This is the contract-level counterpart to the `baseService.ts` item
+above — they must be flipped together, or the backend and the deployed
+contract will disagree about the function signature and every claim
+harvest will fail to encode.
+
+- [ ] Treat all of the above as one coordinated flip, not independent
+  edits — the backend's `claimWinnings` call shape must match whatever the
+  deployed Base vault actually expects, and the vault's real Megapot
+  address must be a genuine mainnet Megapot deployment, not `MockJackpot`.
+- [ ] `docs/testing-with-mock-jackpot.md` and the `MockJackpot.sol` header
+  comment both already warn: never point the vault at `MockJackpot` on
+  anything but a local fork. Confirm `setVaultMegapotAddress` on the
+  mainnet vault has only ever been called with the real address (or never
+  called at all, if it was set correctly at construction).
+
+---
+
+## 🌐 Network & address configuration
+
+| What | Currently | Needs to become |
+|---|---|---|
+| Solana state's USDC mint | Devnet mint, hardcoded in `constants.rs` (see the build-blocking item above) | Mainnet mint, once the Cargo feature is fixed and built with it |
+| `Anchor.toml` `[provider] cluster` | A devnet Helius URL **with a real API key committed in plaintext** | Your mainnet Helius (or other) RPC endpoint. Also worth rotating that devnet key at some point simply as good hygiene — it's sitting in git history regardless of what the file says today. |
+| `frontend/src/solana/constants.ts` `HELIUS_RPC_URL` | Hardcodes the `devnet.` subdomain literally in the template string; only the API key comes from `VITE_HELIUS_API_KEY` | Edit the literal string, not just the env var — the env var alone won't switch clusters |
+| `VITE_USDC_MINT` (Vercel env) | Devnet mint | Mainnet mint — flows correctly into every ATA derivation and the balance hook once changed (this part *is* just an env var, verified this session) |
+| Base RPC | Sepolia (`BASE_SEPOLIA_RPC_URL` / `ANVIL_RPC_URL`) | Real Base mainnet RPC, plus decide the `BASE_RPC_URL`/`tempURL` naming confusion noted above before relying on it |
+| `BASE_CHAIN_ID` | Sepolia (84532) in `.env.example` | 8453 (Base mainnet) |
+| Megapot contract address (Base) | Sepolia test address in deploy scripts / hardcoded Sepolia address in `megapotService.ts` | Real mainnet Megapot Jackpot contract |
+| USDC address (Base) | Sepolia USDC | Real mainnet Base USDC |
+| Referrer wallet | Sepolia test wallet in deploy scripts (`BASE_REWARD_WALLET_ADDRESS`) | Your real mainnet referral wallet — this is the address that actually earns the 10% referral revenue the whole zero-fee strategy depends on. Get this one right. |
+| Block explorer links | `frontend/src/pages/Tickets/Tickets.tsx` hardcodes `sepolia.basescan.org` | `basescan.org` (mainnet) |
+| Solana explorer links | `?cluster=devnet` hardcoded in a couple of frontend links | Remove the cluster param (or set to mainnet-beta) |
+
+---
+
+## ⚙️ Values to re-check before flipping the switch
+
+- [ ] **`max_claim_amount`** — still the placeholder $100,000 sizing from
+  this session. Check Megapot's actual maximum realistic payout before
+  mainnet and set this comfortably above it (see the `claim_winnings`
+  section above for what happens when a real win exceeds it — it fails
+  closed, blocking the claim until you raise it).
+- [ ] **`HARD_MAX_TICKETS_PER_PURCHASE = 100`** (compiled into `lib.rs`) vs
+  **on-chain `max_tickets_per_purchase = 65`** (set via `deploy.ts`,
+  changeable without a redeploy). The 100 ceiling needs a program upgrade
+  to ever change; the 65 doesn't. Don't confuse the two when someone asks
+  "can we raise the ticket cap" — check which one they mean.
+- [ ] **`referralSplit`** in `backend/src/lib/config.ts` is a hardcoded
+  literal (`1000000000000000000`, i.e. 1e18/WAD-style — "you get 100% of
+  the referral allocation Megapot offers"), **not read from an env var**,
+  even though `.env.example` lists `REFERRAL_SPLIT` as if it were
+  configurable. It isn't wired up. If you ever want this adjustable without
+  a code change, that's a small fix; otherwise just know that env var is
+  currently decorative.
+- [ ] Relatedly: `backend/src/routes/quote.ts` (currently dormant, not
+  mounted in `server.ts`) validates a *different* referral value —
+  `10000` basis points — which is a different unit than the `1e18`
+  actually sent on-chain. The two are never compared to each other in code
+  today, so it's not an active bug, but if `quote.ts` ever gets wired up,
+  fix this mismatch first or it'll reject/accept the wrong things.
+
+---
+
+## 📋 Loose ends worth a conscious decision (not urgent, but don't forget them)
+
+- **`base_smart_contracts/MyHackedContract/` and `megapot-mock-server/` are
+  their own nested git repos**, not real submodules (not listed in
+  `.gitmodules`). A fresh clone of this repo will NOT bring them along.
+  `backend/scripts/decode_revert.ts` imports a build artifact from
+  `MyHackedContract/out/`, and `harvestWorker.ts`'s testing block references
+  `megapot-mock-server`'s existence indirectly via the local-mock URLs
+  (currently commented out). Decide before mainnet whether these need to
+  become real submodules, get folded in properly, or get removed entirely
+  once the testing scaffolding they support is gone.
+- **`git status` shows an uncommitted change to
+  `base_smart_contracts/MyHackedContract`** — it's a nested repo, so this
+  is just its own dirty state, not something this repo's git tracks
+  directly. Worth resolving so it's not a permanent "m" in every future
+  `git status`.
+
+---
+
+## ✅ Final smoke-test sequence before real traffic
+
+Do this on devnet first, as a full sequence (not instructions tested in
+isolation), then repeat once for real on mainnet with small amounts before
+any public announcement:
+
+1. Deploy → `initialize` (or `migrate_state` + `set_treasury_authority`
+   bootstrap, if upgrading an existing account) → confirm every state field
+   via `anchor run view-state`.
+2. `buy_ticket` — 1 ticket, then a size larger than
+   `max_tickets_per_purchase` so it forces multiple Solana transactions
+   behind one wallet approval. Check the frontend Tickets page renders it
+   correctly: ONE Solana signature per transaction, with that transaction's
+   several Base relay batches nested underneath it — not one row per Base
+   batch repeating the same Solana hash.
+3. `pause_protocol` → `update_epoch` → `resume_protocol`.
+4. A real `claim_winnings` voucher end to end (settlement → harvest →
+   voucher → user co-sign → payout confirmer discovering it on-chain).
+5. `withdraw_vault_funds`, signed by the real treasury key — this is your
+   proof the cold key actually works before you need it in an emergency.
+6. Confirm the backend's admin signing key matches on-chain `state.admin`
+   exactly, and the Base relayer key matches whatever `setVaultRelayer`
+   last set — a mismatch here fails silently until someone notices claims
+   or purchases have stopped.
 
