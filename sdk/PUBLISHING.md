@@ -121,12 +121,24 @@ npm version 1.0.0
 npm publish --access public       # no tag → becomes `latest`
 ```
 
-### Recommended: publish with provenance
+### Provenance — blocked while the repo is private
 
-If the repo is on GitHub, publishing from GitHub Actions with `--provenance`
-attaches a signed attestation that the tarball was built from a specific public
-commit. Integrators can then verify the published code matches the source. For a
-signing library, that's worth the setup.
+Publishing from GitHub Actions with `--provenance` attaches a signed attestation
+that the tarball was built from a specific commit, so integrators can verify the
+published code matches the source. For a library that signs money-moving
+transactions, that is worth real effort.
+
+**It requires a PUBLIC source repository.** `haildlord/solana_lordspot` is
+currently private, so provenance is unavailable today. Two ways forward:
+
+- Make the monorepo public — unlikely, it holds the backend and deployment docs.
+- **Split the SDK into its own public repo.** This is the better option anyway:
+  integrators can read exactly what they are asked to trust, `verifyVoucher.ts`
+  becomes publicly auditable, and provenance works. The SDK has no dependency on
+  the rest of the monorepo.
+
+Until then, `repository` is deliberately omitted from `package.json` — pointing
+npm at a private repo puts a 404 link on the package page.
 
 ---
 
@@ -240,6 +252,32 @@ Facts, so this isn't rediscovered every release:
 
 Re-evaluate if a patched `bigint-buffer` ships, or if the SDK ever starts
 decoding token accounts directly.
+
+### The other advisories, and how to re-verify all of this
+
+`npm audit` currently reports 8 findings (5 moderate, 3 high) — `bigint-buffer`,
+`uuid` (missing buffer bounds check in v3/v5/v6), `jayson`, and several
+`@solana/*` packages carrying those transitively. **`npm audit --omit=dev`
+reports 0**, because `dependencies` is empty; every one of these arrives through
+the peer packages a consumer installs themselves, and affects any Solana project
+equally.
+
+What actually bounds the exposure is that the SDK never calls the vulnerable
+code. Re-verify that claim mechanically rather than trusting this paragraph —
+run it against `dist/` before each release:
+
+```bash
+cd dist && grep -ohE 'require\("[^"]+"\)' *.js | grep -v '"\./' | sort -u
+cd dist && for f in toBigIntLE toBufferLE unpackAccount unpackMint; do echo "$f: $(grep -ohE "\b$f\b" *.js | wc -l)"; done
+```
+
+Expected: exactly two external requires (`@solana/web3.js`, `@solana/spl-token`),
+and **zero** occurrences of all four functions. The only `@solana/spl-token`
+symbols used are `getAssociatedTokenAddressSync` plus two program-id constants —
+pure address derivation, no attacker-controlled bytes reaching a decoder.
+
+If either command starts producing different output, re-do the exposure analysis
+before publishing.
 
 ### Checks to run before publishing
 

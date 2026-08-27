@@ -461,9 +461,8 @@ if (summary.claimableUsdc > 0n) {
 }
 ```
 
-A runnable version of this lives in `examples/agent.ts` in the source
-repository. It is not included in the npm package — it imports from `src/`
-rather than the published entry point.
+The snippet above is self-contained — everything it uses is exported from the
+package, so you can paste it straight into a file and run it.
 
 ---
 
