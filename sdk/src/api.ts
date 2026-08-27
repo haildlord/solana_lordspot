@@ -34,17 +34,66 @@ export interface VoucherResponse {
   note: string;
 }
 
+/**
+ * Lifecycle of a ticket. A partner narrating progress to a user should treat
+ * these as three genuinely different moments, not one binary "done" flag.
+ *
+ * - `DRAW_PENDING` — bought, drawing hasn't revealed yet.
+ * - `LOST` / `WON_UNCLAIMED` / `WON_FREE_TICKET` — graded.
+ * - `CLAIMED_ON_BASE` — winnings harvested, now claimable on Solana.
+ * - `PAID_OUT_ON_SOLANA` — paid.
+ */
+export type WinStatus =
+  | 'DRAW_PENDING'
+  | 'LOST'
+  | 'WON_UNCLAIMED'
+  | 'WON_FREE_TICKET'
+  | 'CLAIMED_ON_BASE'
+  | 'PAID_OUT_ON_SOLANA'
+  | string;
+
 export interface TicketRecord {
   id: string;
+  /** This ticket's own numbers. */
   normalBalls: number[];
   bonusBall: number;
-  winStatus: string;
+  winStatus: WinStatus;
   winAmountUsdc: bigint;
+  /** True for tiers paid as a free ticket rather than cash. */
+  isFreeTicketTier: boolean;
   purchaseEpoch: number | null;
+  /** Epoch this ticket actually plays in (a deferred order fulfils later). */
   fulfillEpoch: number | null;
   orderStatus: string;
+  purchasedAt: string | null;
+  orderHash: string;
+  /** The buyer's own Solana transaction. */
   txSignature: string;
+  /**
+   * The Base transaction that relayed THIS ticket into Megapot. Per-ticket, not
+   * per-order: a large purchase relays across several Base transactions, so
+   * tickets from one Solana purchase can carry different hashes. Null until
+   * that ticket's batch confirms.
+   */
   baseTxHash: string | null;
+
+  /**
+   * ---- Draw results. Null until the drawing is revealed. ----
+   *
+   * These are what make a "reveal" experience possible without any extra API:
+   * compare `normalBalls`/`bonusBall` against `epochWinningNormals`/
+   * `epochWinningBonusBall` locally and narrate the match however you like.
+   *
+   * Results stay null until the reveal window passes, even if settlement has
+   * already finished internally — so a client cannot learn the outcome early by
+   * polling faster.
+   */
+  epochWinningNormals: number[] | null;
+  epochWinningBonusBall: number | null;
+  /** When this ticket's drawing closes — the countdown target. */
+  epochEndedAt: string | null;
+  /** When the drawing was revealed. Null while still pending. */
+  epochSettledAt: string | null;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -158,10 +207,17 @@ export async function getTickets(baseUrl: string, wallet: string): Promise<Ticke
     bonusBall: (t.bonusBall as number) ?? 0,
     winStatus: String(t.winStatus ?? 'UNKNOWN'),
     winAmountUsdc: toBigInt(t.winAmountUsdc ?? '0', 'winAmountUsdc'),
+    isFreeTicketTier: Boolean(t.isFreeTicketTier),
     purchaseEpoch: (t.purchaseEpoch as number | null) ?? null,
     fulfillEpoch: (t.fulfillEpoch as number | null) ?? null,
     orderStatus: String(t.orderStatus ?? 'UNKNOWN'),
+    purchasedAt: (t.purchasedAt as string | null) ?? null,
+    orderHash: String(t.orderHash ?? ''),
     txSignature: String(t.txSignature ?? ''),
     baseTxHash: (t.baseTxHash as string | null) ?? null,
+    epochWinningNormals: (t.epochWinningNormals as number[] | null) ?? null,
+    epochWinningBonusBall: (t.epochWinningBonusBall as number | null) ?? null,
+    epochEndedAt: (t.epochEndedAt as string | null) ?? null,
+    epochSettledAt: (t.epochSettledAt as string | null) ?? null,
   }));
 }

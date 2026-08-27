@@ -16,7 +16,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"",
+    "prepublishOnly": "npm run test && npm run build"
   },
   "keywords": [
     "solana",
