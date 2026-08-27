@@ -22,7 +22,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19.0 <21 || >=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

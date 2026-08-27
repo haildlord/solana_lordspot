@@ -1,7 +1,7 @@
 # lordspot-sdk
 
 Buy Megapot lottery tickets from Solana and claim winnings — for **server-side
-agents and backends**. Node 18+.
+agents and backends**. Node 20.19+ or 22+.
 
 Browser is not supported. This SDK is built for backends holding their own keys.
 
@@ -17,6 +17,24 @@ exists.
 
 Your agent wallet needs **both USDC and SOL** — USDC buys tickets, SOL pays
 network fees, plus a one-off token-account rent on its first ever claim.
+
+### Why the Node floor is 20.19, and why 21 is excluded
+
+On older runtimes, `require('lordspot-sdk')` fails with **`ERR_REQUIRE_ESM`**
+before any of your code runs:
+
+```
+require() of ES Module .../uuid/dist-node/index.js not supported
+  lordspot-sdk → @solana/web3.js → rpc-websockets → uuid
+```
+
+That is `@solana/web3.js` reaching an ESM-only dependency, which needs Node's
+`require(esm)` support. It shipped unflagged in Node 22 and was backported to
+**20.19** — Node 21 never received it, which is why the range has a hole rather
+than being a simple `>=`. Verified against real runtimes, not inferred:
+18.18 ✗, 18.19 ✗, 20.0 ✗, 20.9 ✗, **20.19 ✓**, 21.1 ✗, 24 ✓, 26 ✓.
+
+If you see that error, upgrade Node. There is nothing to configure.
 
 ---
 

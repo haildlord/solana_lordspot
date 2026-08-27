@@ -40,15 +40,21 @@ jobs:
           fi
           echo "tarball contents OK"
 
-  # package.json declares engines >=18, so prove the BUILT output actually loads
-  # there. These versions cannot run the test glob above, but they are what a
-  # consumer's runtime looks like, which is the thing `engines` is a promise about.
+  # `engines` is a promise about a consumer's runtime, so prove the BUILT output
+  # actually loads on the oldest version it claims to support.
+  #
+  # This job earned its keep immediately: it caught that `engines: ">=18"` was
+  # false. `require('lordspot-sdk')` throws ERR_REQUIRE_ESM on Node 18 and on
+  # Node 20 before 20.19, because @solana/web3.js reaches an ESM-only `uuid`
+  # through rpc-websockets, which needs Node's require(esm) support. That landed
+  # unflagged in 22 and was backported to 20.19 — Node 21 never got it, which is
+  # why `engines` has a hole in it and this matrix skips 21.
   loads-on-oldest-supported:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20]
+        node: ['20.19', 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
