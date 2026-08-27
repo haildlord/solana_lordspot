@@ -1,0 +1,37 @@
+{
+  "name": "@lordspot/sdk",
+  "version": "0.1.0-alpha.0",
+  "description": "Server-side SDK for buying Megapot lottery tickets from Solana and claiming winnings via LordsPot.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "solana",
+    "megapot",
+    "lordspot",
+    "lottery"
+  ],
+  "peerDependencies": {
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.95.0"
+  },
+  "devDependencies": {
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.98.4",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
