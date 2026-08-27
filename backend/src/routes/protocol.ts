@@ -221,21 +221,47 @@ router.get('/epochs/:megapotId/winners/:buyer', async (req: Request, res: Respon
   });
 });
 
-/** One wallet's full ticket history (all epochs, including in-flight). */
+/**
+ * One wallet's ticket history (all epochs, including in-flight), newest first.
+ *
+ * Ordering: `Ticket.id` is a UUID, so the previous `orderBy: { id: 'desc' }`
+ * was effectively ARBITRARY, not newest-first — a long-lived buyer got their
+ * history in random order. Real recency lives on the order
+ * (`relayOrder.lastBought`), with `id` as a deterministic tiebreaker so paging
+ * can never repeat or skip a row when several tickets share one purchase time.
+ *
+ * Pagination is limit/offset for the same reason as the winners route above:
+ * the sort key is a related, non-unique column, which a cursor handles poorly.
+ * Bounded per wallet, so offset scanning stays cheap.
+ *
+ * Backward compatible on purpose — `tickets` keeps its shape and the default
+ * page size is the old hard cap, so existing callers are unaffected. `total`
+ * and `hasMore` are additive. The old `take: 500` silently truncated with no
+ * signal at all; `hasMore` is what makes the truncation visible.
+ */
 router.get('/tickets', async (req: Request, res: Response) => {
   const wallet = parseWallet(req.query.wallet);
   if (!wallet) return res.status(400).json({ error: 'Invalid or missing wallet' });
 
-  const tickets = await prisma.ticket.findMany({
-    where: { relayOrder: { buyer: wallet } },
-    include: {
-      relayOrder: {
-        select: { hash: true, signature: true, purchaseEpoch: true, fulfillEpoch: true, status: true, lastBought: true },
+  const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 500);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+  const where = { relayOrder: { buyer: wallet } };
+
+  const [total, tickets] = await Promise.all([
+    prisma.ticket.count({ where }),
+    prisma.ticket.findMany({
+      where,
+      include: {
+        relayOrder: {
+          select: { hash: true, signature: true, purchaseEpoch: true, fulfillEpoch: true, status: true, lastBought: true },
+        },
       },
-    },
-    orderBy: { id: 'desc' },
-    take: 500,
-  });
+      orderBy: [{ relayOrder: { lastBought: 'desc' } }, { id: 'desc' }],
+      skip: offset,
+      take: limit,
+    }),
+  ]);
 
   const epochIds = [...new Set(tickets.map((t) => t.relayOrder.fulfillEpoch).filter((e): e is number => e !== null))];
   const epochs = epochIds.length
@@ -255,6 +281,10 @@ router.get('/tickets', async (req: Request, res: Response) => {
   const revealedEpochIds = await megapotService.getRevealedEpochIds();
 
   return res.json({
+    total,
+    limit,
+    offset,
+    hasMore: offset + tickets.length < total,
     tickets: tickets.map((t) => {
       const fulfillEpoch = t.relayOrder.fulfillEpoch;
       const isRevealed = fulfillEpoch === null || revealedEpochIds.has(fulfillEpoch);
