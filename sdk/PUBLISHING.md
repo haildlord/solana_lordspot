@@ -39,7 +39,7 @@ To integrate it into a separate app on your machine without publishing:
 
 ```bash
 cd sdk && npm run build && npm link      # register locally
-cd ../my-other-project && npm link @lordspot/sdk
+cd ../my-other-project && npm link lordspot-sdk
 ```
 
 Or install the built tarball directly, which is closer to what a real consumer
@@ -75,16 +75,16 @@ placeholder survives into `dist/`, and it runs as part of `prepublishOnly`, so a
 localhost build physically cannot be published. To develop against a local
 backend, edit `src/config.ts` temporarily and **never commit that edit**.
 
-### Decide the package name
+### The package name is permanent
 
-`@lordspot/sdk` is a scoped name and requires an npm **organisation** called
-`lordspot`. Either:
+`lordspot-sdk` is unscoped, so no npm organisation is needed and it publishes
+public by default (`publishConfig.access` is set explicitly anyway, so it stays
+correct if the name is ever scoped later).
 
-- create the org (free for public packages) at npmjs.com, **or**
-- rename to an unscoped name you own, e.g. `lordspot-sdk`.
-
-Scoped packages are private by default, so publishing a public one needs
-`--access public` (already handled in the command below).
+**A published name can never be reused.** npm refuses to re-publish a version
+number even after unpublishing, and unscoped names are first-come-first-served.
+Be certain before the first `npm publish` — this is the one step in this document
+that cannot be undone.
 
 ### Turn on 2FA
 
@@ -100,25 +100,25 @@ and every integrator pulls it on their next install.
 ```bash
 cd sdk
 npm login
-npm publish --access public --tag alpha
+npm publish --tag alpha
 ```
 
 `prepublishOnly` runs the full test suite and a clean build first, so a broken
 verifier physically cannot be published.
 
 `--tag alpha` matters: it publishes without moving the `latest` tag, so
-`npm install @lordspot/sdk` does **not** pick this up by default. Testers opt in
+`npm install lordspot-sdk` does **not** pick this up by default. Testers opt in
 explicitly:
 
 ```bash
-npm install @lordspot/sdk@alpha
+npm install lordspot-sdk@alpha
 ```
 
 When it's genuinely ready:
 
 ```bash
 npm version 1.0.0
-npm publish --access public       # no tag → becomes `latest`
+npm publish                       # no tag → becomes `latest`
 ```
 
 ### Recommended: publish with provenance
@@ -157,7 +157,7 @@ anything leaked is public permanently.
 
 1. `npm test` — green
 2. `npm version patch|minor|major`
-3. `npm publish --access public`
+3. `npm publish`
 4. `git push --follow-tags`
 
 **Semver, interpreted for this SDK:**

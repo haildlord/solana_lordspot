@@ -1,4 +1,4 @@
-# @lordspot/sdk
+# lordspot-sdk
 
 Buy Megapot lottery tickets from Solana and claim winnings — for **server-side
 agents and backends**. Node 18+.
@@ -6,7 +6,7 @@ agents and backends**. Node 18+.
 Browser is not supported. This SDK is built for backends holding their own keys.
 
 ```bash
-npm install @lordspot/sdk @solana/web3.js @solana/spl-token
+npm install lordspot-sdk @solana/web3.js @solana/spl-token
 ```
 
 `@solana/web3.js` and `@solana/spl-token` are **peer** dependencies — you install
@@ -23,7 +23,7 @@ network fees, plus a one-off token-account rent on its first ever claim.
 ## Quick start — buying
 
 ```ts
-import { createLordsPot, keypairSigner } from '@lordspot/sdk';
+import { createLordsPot, keypairSigner } from 'lordspot-sdk';
 import { Keypair } from '@solana/web3.js';
 
 // `network` is required and never guessed — see "Network safety".
@@ -44,7 +44,7 @@ console.log(`Bought ${tickets.length} tickets for ${totalCostUsdc} base units`);
 ## Quick start — claiming
 
 ```ts
-import { LordsPotError, VoucherVerificationError } from '@lordspot/sdk';
+import { LordsPotError, VoucherVerificationError } from 'lordspot-sdk';
 
 const summary = await lordspot.getClaimSummary(signer.publicKey);
 
@@ -252,7 +252,7 @@ users notice when a UI says "complete" while the ticket is still relaying.
 Winning numbers ship with each ticket once revealed, so no extra call is needed:
 
 ```ts
-import { getTicketMatch, isRevealed, timeUntilDraw } from '@lordspot/sdk';
+import { getTicketMatch, isRevealed, timeUntilDraw } from 'lordspot-sdk';
 
 for (const t of await lordspot.getTickets(wallet)) {
   if (!isRevealed(t)) {
@@ -372,7 +372,7 @@ Every failure is a `LordsPotError` with a stable `code`. Codes are API; messages
 may change.
 
 ```ts
-import { LordsPotError, VoucherVerificationError } from '@lordspot/sdk';
+import { LordsPotError, VoucherVerificationError } from 'lordspot-sdk';
 
 try {
   await lordspot.claimWinnings(signer);
@@ -417,7 +417,7 @@ import {
   createLordsPot, keypairSigner,
   getTicketMatch, isRevealed, timeUntilDraw,
   LordsPotError, VoucherVerificationError,
-} from '@lordspot/sdk';
+} from 'lordspot-sdk';
 import { Keypair } from '@solana/web3.js';
 
 const lordspot = createLordsPot({ network: 'devnet' });

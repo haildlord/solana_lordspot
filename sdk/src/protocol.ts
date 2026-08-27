@@ -109,7 +109,7 @@ export async function fetchProtocolState(
     throw new LordsPotError(
       'RPC_ERROR',
       `LordsPot state layout is v${version}, but this SDK understands v${SUPPORTED_STATE_VERSION}. ` +
-        `Refusing to decode a layout it does not recognise — update @lordspot/sdk.`
+        `Refusing to decode a layout it does not recognise — update lordspot-sdk.`
     );
   }
 

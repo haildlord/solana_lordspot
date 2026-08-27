@@ -76,7 +76,7 @@ export interface LordsPotClient {
  *
  * @example
  * ```ts
- * import { createLordsPot, keypairSigner } from '@lordspot/sdk';
+ * import { createLordsPot, keypairSigner } from 'lordspot-sdk';
  *
  * const lordspot = createLordsPot({ network: 'devnet' });
  * const signer = keypairSigner(myKeypair);
