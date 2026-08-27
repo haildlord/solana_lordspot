@@ -180,6 +180,72 @@ that has to happen first.
 
 ---
 
+## Supply chain
+
+Third-party packages are the most common cause of wallet drains in this
+ecosystem, so the dependency set is deliberately tiny and worth re-checking
+before every release.
+
+### The SDK ships ZERO bundled dependencies
+
+`dependencies` is empty. `@solana/web3.js` and `@solana/spl-token` are
+**peerDependencies**, meaning the consumer installs and controls them. The SDK
+cannot drag in a compromised transitive package of its own, and a consumer who
+pins or patches those libraries keeps that control.
+
+### The @solana/web3.js incident — why the peer range starts at 1.95.8
+
+In December 2024, `@solana/web3.js` **1.95.6** and **1.95.7** were published
+with a backdoor that exfiltrated private keys. Both were unpublished from npm
+(verifiable: 1.95.5 and 1.95.8 resolve, those two do not).
+
+The peer range is therefore `^1.95.8`, not `^1.95.0` — a `^1.95.0` range
+*semantically permits* the two compromised versions, and while npm can no
+longer serve them, a stale local cache, a lockfile written before the pull, or
+a private registry mirror still could. Do not widen this range.
+
+**Before each release:** check whether any newer `@solana/web3.js` has been
+flagged, and raise the floor if so.
+
+### `bigint-buffer` — a known advisory with no fix, and why it is accepted
+
+`npm audit` reports a **high** severity buffer-overflow in `bigint-buffer`
+([GHSA-3gc7-fjrx-p6mg](https://github.com/advisories/GHSA-3gc7-fjrx-p6mg)),
+reached transitively through the Solana packages.
+
+Facts, so this isn't rediscovered every release:
+
+- Its vulnerable range is `*` — **every published version**. There is no patched
+  release to upgrade to.
+- npm's suggested "fix" is downgrading `@solana/spl-token` to `0.1.8`, a
+  semver-major **downgrade** to an ancient version. Do not do this.
+- It affects essentially every Solana project; it is not specific to LordsPot.
+- **This SDK's exposure is minimal**: the overflow is in `toBigIntLE()`, and we
+  never call it. Every `u64` here is decoded with Node's native
+  `readBigUInt64LE` (`src/protocol.ts`, `src/verifyVoucher.ts`), and the only
+  `@solana/spl-token` imports are `getAssociatedTokenAddressSync` (pure address
+  derivation) plus two program-id constants. No account-decoding function —
+  `unpackAccount`, `getAccount`, `unpackMint` — is ever called, so
+  attacker-controlled bytes are never handed to a vulnerable decoder.
+
+Re-evaluate if a patched `bigint-buffer` ships, or if the SDK ever starts
+decoding token accounts directly.
+
+### Checks to run before publishing
+
+```bash
+npm audit                 # review; understand each finding rather than auto-fixing
+npm audit --omit=dev      # note: reports 0 because `dependencies` is empty —
+                          # it does NOT cover the peer deps a consumer installs
+npm pack --dry-run        # confirm no keys, tests, or examples ship
+```
+
+Never run `npm audit fix --force` here. It resolves advisories by making
+semver-major changes — including the `spl-token` downgrade above — and can
+silently swap the libraries that sign transactions.
+
+---
+
 ## Test suite
 
 ```bash
