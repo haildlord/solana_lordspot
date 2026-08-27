@@ -9,9 +9,18 @@ Browser is not supported. This SDK is built for backends holding their own keys.
 npm install @lordspot/sdk @solana/web3.js @solana/spl-token
 ```
 
+`@solana/web3.js` and `@solana/spl-token` are **peer** dependencies — you install
+and control them, so this SDK can never pull in a compromised transitive copy of
+the libraries that sign your transactions. The peer range requires
+`@solana/web3.js@^1.95.8` or newer; see "Minimal dependencies" for why that floor
+exists.
+
+Your agent wallet needs **both USDC and SOL** — USDC buys tickets, SOL pays
+network fees, plus a one-off token-account rent on its first ever claim.
+
 ---
 
-## Quick start
+## Quick start — buying
 
 ```ts
 import { createLordsPot, keypairSigner } from '@lordspot/sdk';
@@ -24,12 +33,44 @@ const signer = keypairSigner(
   Keypair.fromSecretKey(mySecretKeyBytes)   // never hardcode this
 );
 
-// quickPick() reads the CURRENT epoch's number ranges from chain.
+// Number ranges change EVERY epoch. quickPick() reads the current ones from
+// chain, so never cache tickets across draws.
 const tickets = [await lordspot.quickPick(), await lordspot.quickPick()];
 
 const { signatures, totalCostUsdc } = await lordspot.buyTickets(signer, tickets);
 console.log(`Bought ${tickets.length} tickets for ${totalCostUsdc} base units`);
 ```
+
+## Quick start — claiming
+
+```ts
+import { LordsPotError, VoucherVerificationError } from '@lordspot/sdk';
+
+const summary = await lordspot.getClaimSummary(signer.publicKey);
+
+if (summary.claimableUsdc > 0n) {
+  try {
+    // ONE indivisible call: fetch voucher → verify → sign → submit → confirm.
+    const claim = await lordspot.claimWinnings(signer);
+    console.log(`Claimed ${claim.amountUsdc} base units — ${claim.signature}`);
+  } catch (err) {
+    if (err instanceof VoucherVerificationError) {
+      // The bytes we were asked to sign were NOT a plain claim of this wallet's
+      // own winnings. Nothing was signed. This is a security alert, not a
+      // transient fault — alert a human, and NEVER retry it.
+      alertOncall(err.assertion, err.message);
+    } else if (err instanceof LordsPotError && err.code === 'PROTOCOL_PAUSED') {
+      // Brief daily epoch rollover — retry in a few minutes.
+      retryLater();
+    } else throw err;
+  }
+}
+```
+
+**Claiming is all-or-nothing.** There is no partial claim: a voucher sweeps
+*every* currently-claimable ticket for the wallet and pays the total in one
+transaction. `claimWinnings()` takes no amount, and an amount supplied to the API
+by hand is ignored — the figure is derived solely from settled ticket rows.
 
 > **USDC amounts are always `bigint` base units with 6 decimals.**
 > `1000000n` = $1.00. There is no floating point anywhere in this SDK — money
@@ -45,9 +86,15 @@ console.log(`Bought ${tickets.length} tickets for ${totalCostUsdc} base units`);
 createLordsPot({
   network: 'devnet' | 'mainnet',  // REQUIRED, never inferred
   rpcUrl?: string,                // optional: your own RPC (recommended)
-  apiUrl?: string,                // LordsPot local development only
 }): LordsPotClient
 ```
+
+`rpcUrl` is the only network value you can set. The program id, USDC mint and
+API host are baked into each release and cannot be overridden — they decide
+which program moves your money and whose server co-signs your claims, so a
+config typo or a poisoned env var must not be able to redirect them. Your RPC
+choice is safe to expose because the SDK verifies the endpoint's genesis hash
+matches the requested cluster before signing anything.
 
 ### Reading
 
@@ -56,8 +103,24 @@ createLordsPot({
 | `getProtocolState()` | `ProtocolState` | Live on-chain rules. **Re-read every epoch.** |
 | `quickPick(rules?)` | `Ticket` | Random valid ticket. Reads live ranges if `rules` omitted. |
 | `quoteCost(count)` | `bigint` | Total cost in base units, matching the program's own math. |
-| `getTickets(wallet)` | `TicketRecord[]` | All tickets + relay and draw status. |
+| `getTickets(wallet)` | `TicketRecord[]` | Every ticket ever bought + relay and draw status. **Unordered — see below.** |
 | `getClaimSummary(wallet)` | `ClaimSummary` | What's claimable now. |
+
+⚠️ **`getTickets()` returns the wallet's ENTIRE history in no guaranteed order,
+with no pagination.** It is not newest-first, and a long-lived agent will
+accumulate hundreds of rows. Never assume position — sort explicitly, and match
+a specific purchase by `txSignature`:
+
+```ts
+const all = await lordspot.getTickets(wallet);
+
+const newestFirst = [...all].sort(
+  (a, b) => Date.parse(b.purchasedAt ?? '') - Date.parse(a.purchasedAt ?? '')
+);
+
+// Find the tickets from one specific buy:
+const fromThisPurchase = all.filter((t) => t.txSignature === mySignature);
+```
 
 ### Writing (requires a signer)
 
@@ -154,12 +217,22 @@ The SDK never asks for, stores, or transmits a secret key.
 ### `ClaimSummary`
 ```ts
 {
-  claimableUsdc: bigint;
-  freeTickets: number;
-  totalPaidOutUsdc: bigint;
+  claimableUsdc: bigint;    // total claimable RIGHT NOW, in base units
+  freeTickets: number;      // informational only — see below
+  totalPaidOutUsdc: bigint; // lifetime, already paid out on Solana
   pendingVoucher: { amountUsdc: bigint; createdAt: string } | null;
 }
 ```
+
+⚠️ **`freeTickets` are already counted inside `claimableUsdc`.** Free-tier wins
+are currently paid out as cash like any other win, so `freeTickets` is a
+*breakdown* of that total, not an additional balance. **Never add them together
+— that double-counts.** The field exists so a UI can say "of which N were free
+tickets", and so a future redeem-as-a-ticket flow can find them again.
+
+`pendingVoucher` being non-null means a claim is already in flight for this
+wallet; `claimableUsdc` reads `0` until it confirms or expires (~90s). That is
+correct behaviour, not an error — see gotcha 5.
 
 ---
 
@@ -280,6 +353,17 @@ no telemetry.
    `claimWinnings()` is one indivisible call for exactly this reason.
 6. **Never make the fee recipient a wallet that also buys tickets** — buyer and
    fee recipient resolving to the same account fails on-chain.
+7. **`getTickets()` is unordered and unpaginated.** Sort it yourself; match
+   purchases by `txSignature`, never by array position.
+8. **`freeTickets` is already inside `claimableUsdc`.** Adding them
+   double-counts.
+9. **Claims are all-or-nothing.** You cannot claim a partial amount, and any
+   amount you supply is ignored — the total comes from settled ticket rows.
+10. **A claim's effect is not instant across every read.** `claimWinnings()`
+    returns once the transaction confirms, but `totalPaidOutUsdc` and each
+    ticket's `PAID_OUT_ON_SOLANA` status are stamped by a backend confirmer that
+    discovers the transaction on-chain. Expect a few seconds of lag; reconcile
+    against `claim.signature`, not against an immediate summary re-read.
 
 ---
 
@@ -325,10 +409,62 @@ try {
 
 ---
 
-## Example
+## A complete agent
 
-A complete agent — buy, inspect results, claim — is in
-[`examples/agent.ts`](./examples/agent.ts).
+Buy, inspect results, claim — the whole lifecycle:
+
+```ts
+import {
+  createLordsPot, keypairSigner,
+  getTicketMatch, isRevealed, timeUntilDraw,
+  LordsPotError, VoucherVerificationError,
+} from '@lordspot/sdk';
+import { Keypair } from '@solana/web3.js';
+
+const lordspot = createLordsPot({ network: 'devnet' });
+const signer = keypairSigner(Keypair.fromSecretKey(mySecretKeyBytes));
+const usd = (v: bigint) => `$${(Number(v) / 1e6).toFixed(2)}`;
+
+// 1. Read live rules. Ball ranges change every epoch — never cache these.
+const state = await lordspot.getProtocolState();
+if (state.isPaused) return;                     // brief daily rollover
+
+// 2. Buy.
+const tickets = [await lordspot.quickPick(), await lordspot.quickPick()];
+const purchase = await lordspot.buyTickets(signer, tickets);
+console.log(`Bought ${purchase.ticketCount} for ${usd(purchase.totalCostUsdc)}`);
+
+// 3. Inspect. Relaying to Base takes ~30-60s, so a just-bought ticket will
+//    still show baseTxHash: null here — that is expected, not a failure.
+for (const t of await lordspot.getTickets(signer.publicKey)) {
+  if (!isRevealed(t)) {
+    const ms = timeUntilDraw(t);
+    console.log(`draw in ${ms === null ? '?' : Math.round(ms / 60_000)}m`);
+    continue;
+  }
+  const m = getTicketMatch(t)!;
+  console.log(`matched ${m.normalMatches}/5${m.bonusMatch ? ' + bonus' : ''}`);
+}
+
+// 4. Claim everything currently claimable.
+const summary = await lordspot.getClaimSummary(signer.publicKey);
+if (summary.claimableUsdc > 0n) {
+  try {
+    const claim = await lordspot.claimWinnings(signer);
+    console.log(`Claimed ${usd(claim.amountUsdc)} — ${claim.signature}`);
+  } catch (err) {
+    if (err instanceof VoucherVerificationError) {
+      alertOncall(err.assertion, err.message);   // SECURITY — never retry
+    } else if (err instanceof LordsPotError) {
+      console.error(`[${err.code}] ${err.message}`);
+    } else throw err;
+  }
+}
+```
+
+A runnable version of this lives in `examples/agent.ts` in the source
+repository. It is not included in the npm package — it imports from `src/`
+rather than the published entry point.
 
 ---
 

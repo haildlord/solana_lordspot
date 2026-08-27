@@ -19,7 +19,8 @@ npm run build
 
 ### Try it against devnet
 
-Make sure the backend is running (`npm run dev` in `backend/`), then:
+The SDK talks to whichever host is baked into `src/config.ts` for `devnet` —
+the deployed devnet API, not localhost. Nothing needs to be running locally:
 
 ```bash
 cd sdk
@@ -58,12 +59,21 @@ source. The tarball is exactly what npm would publish.
 
 ## Stage 2 — Before publishing anything
 
-### Fix the API URL first
+### The API host is baked in, and guarded
 
-`src/config.ts` still points devnet at `http://localhost:3000`
-(marked `TODO(mainnet-launch)`). **Published as-is, the SDK works only on your
-machine.** Replace it with your deployed devnet API host before anyone else
-installs it.
+`src/config.ts` holds one API host per network, and there is **no runtime
+override** — `apiUrl` was deliberately removed from `createLordsPot()`. A caller
+who could redirect the API host could point claim-voucher requests at a server
+of their choosing; `verifyVoucher` would still refuse to sign anything
+malicious, but they could deny service and learn which wallets you query.
+
+The host itself is **not a secret** — every integrator's traffic reaches it and
+the web app calls it from browsers. It is baked in for integrity, not secrecy.
+
+`npm run guard:hosts` fails if `localhost`, `127.0.0.1`, or a `__SET_`
+placeholder survives into `dist/`, and it runs as part of `prepublishOnly`, so a
+localhost build physically cannot be published. To develop against a local
+backend, edit `src/config.ts` temporarily and **never commit that edit**.
 
 ### Decide the package name
 
@@ -258,3 +268,23 @@ might return and asserts the SDK refuses to sign it.
 
 If one of those starts failing, do not publish. A regression there means a
 partner's users can be drained.
+
+### Also run the live check — the unit tests have a blind spot
+
+The unit tests build vouchers from synthetic fixtures. They prove the verifier
+rejects malicious *shapes*. They cannot prove it **accepts what the real backend
+actually issues** — a verifier that rejected everything would pass all 41 tests
+and be useless in production.
+
+```bash
+AGENT_PRIVATE_KEY=<devnet-base58> node scripts/verify-against-live-api.js
+```
+
+Needs a devnet wallet **with claimable winnings** (it refuses to run otherwise,
+rather than passing vacuously). It asserts an over-claim is stopped at three
+independent layers — backend ignores an injected amount, SDK refuses tampered
+vouchers, chain rejects them anyway — and checks a genuine voucher still
+verifies. It requests one real voucher and deliberately never submits it, so the
+voucher expires and the bound tickets are released automatically. No funds move.
+
+Exit code is non-zero if any layer fails. Run it before every release.

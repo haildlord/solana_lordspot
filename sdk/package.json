@@ -17,7 +17,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/**/*.test.js\"",
-    "prepublishOnly": "npm run test && npm run build"
+    "guard:hosts": "if grep -rEln 'https?://(localhost|127\\.0\\.0\\.1|__SET_)' dist/; then echo 'BUILD REJECTED: the files above contain a localhost or placeholder API host. Fix src/config.ts before publishing.' && exit 1; else echo 'OK: no localhost or placeholder hosts in dist/'; fi",
+    "prepublishOnly": "npm run test && npm run build && npm run guard:hosts"
   },
   "keywords": [
     "solana",

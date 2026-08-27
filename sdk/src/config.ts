@@ -6,14 +6,23 @@ export type LordsPotNetwork = 'devnet' | 'mainnet';
 /**
  * Per-network identifiers, BAKED INTO THE SDK — deliberately not overridable.
  *
- * A caller can supply their own RPC endpoint (they'll want their own provider
- * key), but never the program id, USDC mint, or API url. Those three decide
- * *which program moves the money* and *whose server signs the co-signature*;
- * making them caller-supplied would turn a config typo — or a poisoned env var
- * in the caller's deployment — into a redirect to an attacker's program.
+ * None of these are secrets. The API host in particular is public by
+ * construction: every integrator's traffic reaches it, and the LordsPot web app
+ * calls it from browsers already. Publishing it costs nothing.
  *
- * `genesisHash` is the cluster's fingerprint, verified against the live RPC
- * before anything is signed. See networkGuard.ts.
+ * What matters is that a CALLER CANNOT CHANGE IT. The program id, USDC mint and
+ * API url decide *which program moves the money* and *whose server co-signs a
+ * claim*. Exposing any of them as an override turns a config typo — or one
+ * poisoned env var in an integrator's deployment — into a silent redirect.
+ *
+ * The only network knob a caller gets is `rpcUrl`, because they will want their
+ * own provider key. That one is safe to expose: networkGuard.ts verifies the
+ * endpoint really serves this cluster's `genesisHash` before anything is signed,
+ * so a wrong or hostile RPC is caught rather than trusted.
+ *
+ * LordsPot's own local development is done by temporarily editing this file, and
+ * never committing that edit. There is deliberately no localhost entry and no
+ * runtime escape hatch: a published SDK must only ever talk to a deployed host.
  */
 interface NetworkConfig {
   programId: PublicKey;
@@ -38,8 +47,10 @@ const NETWORKS: Partial<Record<LordsPotNetwork, NetworkConfig>> = {
   devnet: {
     programId: new PublicKey('5M2BS7XuZgFtKWBBGdyNy4g3UkgdMvd7gvaFVvabcGWo'),
     usdcMint: new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'),
-    // TODO(mainnet-launch): replace with the deployed devnet API host.
-    apiUrl: 'http://localhost:3000',
+    // Must be the deployed devnet API host — never localhost. `npm run
+    // guard:hosts` fails the build if a placeholder or localhost URL survives
+    // into dist/, so this cannot ship unset.
+    apiUrl: 'https://lordspot-beta.onrender.com',
     genesisHash: 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',
     defaultRpcUrl: 'https://api.devnet.solana.com',
   },
@@ -52,16 +63,15 @@ export interface LordsPotConfigInput {
    * nobody reaches mainnet without typing the word.
    */
   network: LordsPotNetwork;
-  /** Optional: your own RPC endpoint. Falls back to the public cluster RPC. */
-  rpcUrl?: string;
   /**
-   * Optional API url override. Intended for LordsPot's own local development
-   * only — pointing this at an untrusted host means that host co-signs your
-   * claim transactions. The SDK still verifies every voucher before signing
-   * (see claim.ts), so a hostile API cannot drain a wallet, but it can still
-   * deny service or leak which wallets you query.
+   * Optional: your own RPC endpoint. Falls back to the public cluster RPC,
+   * which rate-limits hard — supply your own provider for anything real.
+   *
+   * This is the ONLY network value a caller may set. It is safe to expose
+   * because networkGuard.ts verifies the endpoint's genesis hash matches the
+   * requested cluster before a transaction is ever signed.
    */
-  apiUrl?: string;
+  rpcUrl?: string;
 }
 
 export interface ResolvedConfig {
@@ -97,9 +107,16 @@ export function resolveConfig(input: LordsPotConfigInput): ResolvedConfig {
     throw new LordsPotError('INVALID_CONFIG', `rpcUrl must be an http(s) URL, got: ${String(rpcUrl)}`);
   }
 
-  const apiUrl = (input.apiUrl ?? preset.apiUrl).replace(/\/+$/, '');
-  if (!/^https?:\/\//.test(apiUrl)) {
-    throw new LordsPotError('INVALID_CONFIG', `apiUrl must be an http(s) URL, got: ${apiUrl}`);
+  // Not caller-supplied, so this is an assertion about the SHIPPED build rather
+  // than input validation: it catches a broken or placeholder preset loudly at
+  // the first call instead of failing somewhere deep in a fetch.
+  const apiUrl = preset.apiUrl.replace(/\/+$/, '');
+  if (!/^https:\/\//.test(apiUrl) || apiUrl.includes('__SET_')) {
+    throw new LordsPotError(
+      'INVALID_CONFIG',
+      `This SDK build has no valid API host for "${input.network}" (got: ${apiUrl}). ` +
+        `This is a packaging bug — please report it rather than working around it.`
+    );
   }
 
   return {
