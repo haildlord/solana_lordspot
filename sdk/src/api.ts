@@ -207,13 +207,39 @@ export async function requestVoucher(baseUrl: string, wallet: string): Promise<V
   return out;
 }
 
-export async function getTickets(baseUrl: string, wallet: string): Promise<TicketRecord[]> {
-  const raw = await request<{ tickets: Array<Record<string, unknown>> }>(
-    baseUrl,
-    `/v1/protocol/tickets?wallet=${encodeURIComponent(wallet)}`
-  );
+/** Server-side page size cap. Requesting more is clamped, not an error. */
+const TICKETS_PAGE_SIZE = 500;
 
-  return (raw.tickets ?? []).map((t) => ({
+/**
+ * Hard stop on auto-pagination: 100 pages x 500 = 50,000 tickets. Far beyond any
+ * realistic agent, and the difference between a slow call and an unbounded loop
+ * against a misbehaving API.
+ */
+const MAX_TICKET_PAGES = 100;
+
+export async function getTickets(baseUrl: string, wallet: string): Promise<TicketRecord[]> {
+  const all: Array<Record<string, unknown>> = [];
+
+  for (let page = 0; page < MAX_TICKET_PAGES; page++) {
+    const raw = await request<{
+      tickets: Array<Record<string, unknown>>;
+      hasMore?: boolean;
+    }>(
+      baseUrl,
+      `/v1/protocol/tickets?wallet=${encodeURIComponent(wallet)}` +
+        `&limit=${TICKETS_PAGE_SIZE}&offset=${page * TICKETS_PAGE_SIZE}`
+    );
+
+    const batch = raw.tickets ?? [];
+    all.push(...batch);
+
+    // `hasMore` MUST be exactly true to continue. An older deployment that
+    // doesn't paginate omits it entirely and ignores our limit/offset — looping
+    // on anything weaker would re-fetch page 0 forever and never terminate.
+    if (raw.hasMore !== true || batch.length === 0) break;
+  }
+
+  return all.map((t) => ({
     id: String(t.id),
     normalBalls: (t.normalBalls as number[]) ?? [],
     bonusBall: (t.bonusBall as number) ?? 0,

@@ -103,23 +103,21 @@ matches the requested cluster before signing anything.
 | `getProtocolState()` | `ProtocolState` | Live on-chain rules. **Re-read every epoch.** |
 | `quickPick(rules?)` | `Ticket` | Random valid ticket. Reads live ranges if `rules` omitted. |
 | `quoteCost(count)` | `bigint` | Total cost in base units, matching the program's own math. |
-| `getTickets(wallet)` | `TicketRecord[]` | Every ticket ever bought + relay and draw status. **Unordered — see below.** |
+| `getTickets(wallet)` | `TicketRecord[]` | Every ticket ever bought, **newest first**. Paginates internally. |
 | `getClaimSummary(wallet)` | `ClaimSummary` | What's claimable now. |
 
-⚠️ **`getTickets()` returns the wallet's ENTIRE history in no guaranteed order,
-with no pagination.** It is not newest-first, and a long-lived agent will
-accumulate hundreds of rows. Never assume position — sort explicitly, and match
-a specific purchase by `txSignature`:
+`getTickets()` returns the wallet's **complete** history, newest first, fetching
+every page for you — there is no cursor to manage and nothing is silently
+truncated. A long-lived agent accumulates a lot of rows, so treat it as a real
+network call rather than something to poll in a tight loop.
+
+Tickets bought in the same purchase share a timestamp, so their relative order
+within that purchase is stable but arbitrary. Match a specific purchase by
+`txSignature`, never by array position:
 
 ```ts
-const all = await lordspot.getTickets(wallet);
-
-const newestFirst = [...all].sort(
-  (a, b) => Date.parse(b.purchasedAt ?? '') - Date.parse(a.purchasedAt ?? '')
-);
-
-// Find the tickets from one specific buy:
-const fromThisPurchase = all.filter((t) => t.txSignature === mySignature);
+const fromThisPurchase = (await lordspot.getTickets(wallet))
+  .filter((t) => t.txSignature === purchase.signatures[0]);
 ```
 
 ### Writing (requires a signer)
@@ -353,8 +351,9 @@ no telemetry.
    `claimWinnings()` is one indivisible call for exactly this reason.
 6. **Never make the fee recipient a wallet that also buys tickets** — buyer and
    fee recipient resolving to the same account fails on-chain.
-7. **`getTickets()` is unordered and unpaginated.** Sort it yourself; match
-   purchases by `txSignature`, never by array position.
+7. **`getTickets()` fetches the whole history, every time.** It is newest-first
+   and paginates internally, so nothing is truncated — but that also means it
+   grows with the wallet. Cache it; don't poll it in a tight loop.
 8. **`freeTickets` is already inside `claimableUsdc`.** Adding them
    double-counts.
 9. **Claims are all-or-nothing.** You cannot claim a partial amount, and any
