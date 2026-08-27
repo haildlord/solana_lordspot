@@ -354,10 +354,54 @@ overridden, so a poisoned environment variable can't redirect you elsewhere.
 
 ### Minimal dependencies
 
-Runtime deps are only `@solana/web3.js` and `@solana/spl-token`. Instructions are
-encoded directly rather than via Anchor — for a library that signs money-moving
-transactions, every extra dependency is attack surface. No `postinstall` scripts,
-no telemetry.
+This package bundles **zero** runtime dependencies. `@solana/web3.js` and
+`@solana/spl-token` are peer dependencies, so you install and control them — this
+SDK cannot pull in a compromised transitive copy of the libraries that sign your
+transactions, and if you pin or patch them, that decision stays yours.
+
+Instructions are encoded directly rather than via Anchor: for a library that
+signs money-moving transactions, every extra dependency is attack surface. No
+`postinstall` scripts, no telemetry, no network calls beyond the Solana RPC you
+configure and the LordsPot API.
+
+### `npm audit` will flag this package. Here is exactly why.
+
+Installing it prints something like `9 vulnerabilities (5 moderate, 4 high)`,
+with **`lordspot-sdk` itself listed as high severity.** That looks alarming on a
+package you are about to trust with a signing key, so here is the whole picture
+rather than a reassurance.
+
+There are **no advisories against this SDK's own code.** npm attributes a finding
+to every package along the path to it, and the path is:
+
+```
+lordspot-sdk
+  └─ @solana/spl-token
+       ├─ @solana/buffer-layout-utils
+       │    └─ bigint-buffer      ← Buffer overflow in toBigIntLE()
+       └─ @solana/web3.js → jayson → uuid   ← Missing buffer bounds check
+```
+
+Both findings live in packages the Solana libraries pull in, so **every** Solana
+project reports them. Two facts bound the real exposure here:
+
+- **`bigint-buffer` has no fixed version.** Its vulnerable range is `*`. There is
+  nothing to upgrade to, which is why it persists across the ecosystem.
+- **This SDK never calls the vulnerable functions.** Every `u64` is decoded with
+  Node's native `readBigUInt64LE`, and the only `@solana/spl-token` imports are
+  `getAssociatedTokenAddressSync` plus two program-id constants — pure address
+  derivation. `toBigIntLE`, `toBufferLE`, `unpackAccount` and `unpackMint` appear
+  zero times in the published build. Verify it yourself:
+
+  ```bash
+  cd node_modules/lordspot-sdk/dist
+  grep -c "toBigIntLE\|toBufferLE\|unpackAccount\|unpackMint" *.js   # all zero
+  ```
+
+**Do not run `npm audit fix --force` to silence this.** Its "fix" is downgrading
+`@solana/spl-token` to `0.1.8` — a semver-major downgrade to an ancient release,
+which silently swaps out the library building your token instructions. That is a
+far larger risk than the advisory it resolves.
 
 ---
 
