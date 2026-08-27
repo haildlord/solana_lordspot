@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Full suite. Runs on Node 22+ only because `npm test` passes a `**` glob to
+  # `node --test`, which older versions do not expand — on Node 20 the same
+  # command silently discovers 1 test instead of 41. A green run that tested
+  # almost nothing is worse than no run, so the glob decides this matrix.
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      # Release blocker: a localhost or placeholder API host must never reach
+      # dist/. prepublishOnly enforces this too; catching it here means a bad
+      # config.ts fails on the PR rather than at publish time.
+      - run: npm run guard:hosts
+
+      - name: Confirm the tarball ships no source, tests, or examples
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
+          if grep -qE "(src/|\.test\.|examples/|scripts/|PUBLISHING|\.env)" /tmp/pack.txt; then
+            echo "::error::tarball contains files that must not be published"
+            exit 1
+          fi
+          echo "tarball contents OK"
+
+  # package.json declares engines >=18, so prove the BUILT output actually loads
+  # there. These versions cannot run the test glob above, but they are what a
+  # consumer's runtime looks like, which is the thing `engines` is a promise about.
+  loads-on-oldest-supported:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Require the built package
+        run: |
+          node -e "
+            const api = require('./dist/index.js');
+            const expected = ['createLordsPot','keypairSigner','quickPick','validateTicket',
+                              'getTicketMatch','isRevealed','timeUntilDraw',
+                              'LordsPotError','VoucherVerificationError'];
+            const missing = expected.filter(n => !(n in api));
+            if (missing.length) throw new Error('missing exports: ' + missing.join(', '));
+            console.log('loads OK on ' + process.version + ' with all ' + expected.length + ' exports');
+          "

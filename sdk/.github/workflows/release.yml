@@ -1,0 +1,67 @@
+name: Release
+
+# Publishes on a version tag (v0.1.0-alpha.0, v1.0.0, ...).
+#
+# Publishing from CI is what makes `--provenance` possible: npm records a signed
+# attestation that this tarball was built from this public commit, so an
+# integrator can verify the code they audited is the code they installed. For a
+# library that signs money-moving transactions, that link is the point.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # REQUIRED for --provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    # Gate this behind a GitHub Environment with required reviewers. An npm
+    # automation token bypasses 2FA by design — that is how CI publishing works
+    # at all — so the review step is what replaces the 2FA prompt a manual
+    # publish would give you. Without it, anyone who can push a tag can publish.
+    environment: npm-publish
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      # Everything prepublishOnly would run, run explicitly so a failure is
+      # attributable to a step rather than buried in npm's output.
+      - run: npm test
+      - run: npm run build
+      - run: npm run guard:hosts
+
+      - name: Tag must match package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+          echo "tag and package.json agree on $PKG"
+
+      - name: Publish
+        # A prerelease version (anything with a hyphen: 0.1.0-alpha.0) publishes
+        # under the `alpha` dist-tag so it does NOT become what `npm i
+        # lordspot-sdk` installs. Only a clean version moves `latest`.
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          case "$VERSION" in
+            *-*) echo "prerelease $VERSION -> dist-tag alpha"
+                 npm publish --provenance --tag alpha ;;
+            *)   echo "release $VERSION -> dist-tag latest"
+                 npm publish --provenance ;;
+          esac
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
