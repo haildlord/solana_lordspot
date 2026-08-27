@@ -8,6 +8,7 @@ import {
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js';
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { verifyClaimVoucher } from './verifyVoucher';
 import { CLAIM_WINNINGS_DISCRIMINATOR } from './instructions';
 import { getLordsPotStatePda, getUserUsdcAta, getVaultAuthorityPda, getVaultUsdcAta } from './pdas';
@@ -47,6 +48,12 @@ function u64(value: bigint): Buffer {
   return b;
 }
 
+/**
+ * Builds the claim instruction exactly as the program's `ClaimWinnings` struct
+ * declares it — all TEN accounts, including the three program ids. An earlier
+ * version of this helper stopped at seven, which quietly meant the suite was
+ * asserting against a shape the program never receives.
+ */
 function claimIx(
   amount: bigint,
   opts: { user?: PublicKey; userAta?: PublicKey; adminKey?: PublicKey } = {}
@@ -63,6 +70,9 @@ function claimIx(
       { pubkey: getVaultUsdcAta(PROGRAM_ID, USDC_MINT), isSigner: false, isWritable: true },
       { pubkey: getVaultAuthorityPda(PROGRAM_ID), isSigner: false, isWritable: false },
       { pubkey: USDC_MINT, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
   });
 }
@@ -189,9 +199,12 @@ describe('verifyClaimVoucher — attack simulations (each MUST be rejected)', ()
   });
 
   test('rejects an extra required signer', () => {
+    // Flips an EXISTING account to a signer rather than appending one. An
+    // appended signer is now caught earlier by account-count, so appending here
+    // would only re-test that check and leave no-unexpected-signers unexercised.
     assertRejected(() => {
       const ix = claimIx(AMOUNT);
-      ix.keys.push({ pubkey: attacker.publicKey, isSigner: true, isWritable: true });
+      ix.keys[6]!.isSigner = true; // usdc_mint, correct address but must not sign
       return makeTx([ix]);
     }, 'no-unexpected-signers');
   });
@@ -220,5 +233,82 @@ describe('verifyClaimVoucher — attack simulations (each MUST be rejected)', ()
       ix.data = ix.data.subarray(0, 10); // discriminator + partial amount
       return makeTx([ix]);
     }, 'instruction-data-length');
+  });
+
+  test('rejects trailing bytes appended after the amount', () => {
+    assertRejected(() => {
+      const ix = claimIx(AMOUNT);
+      ix.data = Buffer.concat([ix.data, Buffer.alloc(64, 0xff)]);
+      return makeTx([ix]);
+    }, 'instruction-data-length');
+  });
+
+  test('rejects extra accounts appended past the declared ten', () => {
+    assertRejected(() => {
+      const ix = claimIx(AMOUNT);
+      ix.keys.push({ pubkey: attacker.publicKey, isSigner: false, isWritable: true });
+      return makeTx([ix]);
+    }, 'account-count');
+  });
+
+  test('rejects a substituted token program', () => {
+    assertRejected(() => {
+      const ix = claimIx(AMOUNT);
+      ix.keys[8]!.pubkey = attacker.publicKey;
+      return makeTx([ix]);
+    }, 'account-token_program');
+  });
+});
+
+/**
+ * The claimant is the fee payer, so the compute budget is part of what they are
+ * being asked to authorise. Every other check can pass while the transaction
+ * quietly carries a compute unit price that costs the signer their whole SOL
+ * balance — a drain with no foreign instruction and no redirected payout.
+ */
+describe('verifyClaimVoucher — priority fee bounds', () => {
+  test('accepts a realistic priority fee', () => {
+    const tx = makeTx([
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }),
+      claimIx(AMOUNT),
+    ]);
+    assert.equal(verifyClaimVoucher(tx, expectations), AMOUNT); // 100 lamports
+  });
+
+  test('rejects a compute unit price that would drain the signer', () => {
+    assertRejected(
+      () =>
+        makeTx([
+          ComputeBudgetProgram.setComputeUnitLimit({ units: 1_400_000 }),
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000_000_000 }),
+          claimIx(AMOUNT),
+        ]),
+      'priority-fee-bounded'
+    );
+  });
+
+  test('rejects a huge unit price even with NO declared limit', () => {
+    // Omitting the limit must not sidestep the bound — the runtime would apply
+    // its own, so the worst case is assumed rather than treated as zero.
+    assertRejected(
+      () =>
+        makeTx([
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000_000_000 }),
+          claimIx(AMOUNT),
+        ]),
+      'priority-fee-bounded'
+    );
+  });
+
+  test('rejects a compute unit limit above Solana’s own maximum', () => {
+    assertRejected(
+      () =>
+        makeTx([
+          ComputeBudgetProgram.setComputeUnitLimit({ units: 4_000_000_000 }),
+          claimIx(AMOUNT),
+        ]),
+      'compute-unit-limit'
+    );
   });
 });

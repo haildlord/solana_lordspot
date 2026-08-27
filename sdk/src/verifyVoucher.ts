@@ -1,9 +1,11 @@
 import {
   ComputeBudgetProgram,
   PublicKey,
+  SystemProgram,
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js';
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { VoucherVerificationError } from './errors';
 import { CLAIM_WINNINGS_DISCRIMINATOR } from './instructions';
 import { getLordsPotStatePda, getUserUsdcAta, getVaultAuthorityPda, getVaultUsdcAta } from './pdas';
@@ -49,6 +51,28 @@ export interface VoucherExpectations {
 /** Instructions permitted alongside the claim. Anything else is rejected. */
 const ALLOWED_EXTRA_PROGRAM_IDS = new Set([ComputeBudgetProgram.programId.toBase58()]);
 
+// ComputeBudget instructions are permitted above, which makes their VALUES part
+// of the attack surface: the claimant is the fee payer, and the priority fee is
+// compute_unit_limit x compute_unit_price / 1e6 lamports. Left unbounded, a
+// compromised API could attach a legitimate-looking claim to an astronomical
+// unit price and drain the signer's entire SOL balance as a priority fee —
+// no foreign instruction, no redirected payout, every other check passing.
+const CB_SET_UNIT_LIMIT = 2;
+const CB_SET_UNIT_PRICE = 3;
+
+/** Solana's own per-transaction ceiling; a larger value is nonsense. */
+const MAX_COMPUTE_UNIT_LIMIT = 1_400_000n;
+
+/** Assumed limit when none is declared, for the fee bound below. */
+const DEFAULT_COMPUTE_UNIT_LIMIT = 1_400_000n;
+
+/**
+ * Ceiling on the priority fee a claim may pay, in lamports. 0.01 SOL is orders
+ * of magnitude above what a claim needs (~100k CU) while capping the worst case
+ * a hostile voucher can cost at roughly a cent.
+ */
+const MAX_PRIORITY_FEE_LAMPORTS = 10_000_000n;
+
 function assert(condition: boolean, name: string, detail: string): asserts condition {
   if (!condition) throw new VoucherVerificationError(name, detail);
 }
@@ -62,6 +86,7 @@ function assert(condition: boolean, name: string, detail: string): asserts condi
 export function verifyClaimVoucher(tx: Transaction, expect: VoucherExpectations): bigint {
   // ---- 1. Exactly one instruction targets our program; the rest are benign. ----
   const claimIxs: TransactionInstruction[] = [];
+  const computeBudgetIxs: TransactionInstruction[] = [];
   for (const ix of tx.instructions) {
     const pid = ix.programId.toBase58();
     if (pid === expect.programId.toBase58()) {
@@ -73,6 +98,7 @@ export function verifyClaimVoucher(tx: Transaction, expect: VoucherExpectations)
         `transaction contains an instruction for an unexpected program (${pid}). ` +
           `Only LordsPot and ComputeBudget instructions are permitted in a claim.`
       );
+      computeBudgetIxs.push(ix);
     }
   }
   assert(
@@ -84,10 +110,13 @@ export function verifyClaimVoucher(tx: Transaction, expect: VoucherExpectations)
   const ix = claimIxs[0]!;
 
   // ---- 2. It is claim_winnings, identified by Anchor's discriminator. ----
+  // Exactly 16: claim_winnings takes one u64. Trailing bytes are not something
+  // a legitimate encoder produces, and "at least" would leave a region of the
+  // signed payload that nothing here ever looks at.
   assert(
-    ix.data.length >= 16,
+    ix.data.length === 16,
     'instruction-data-length',
-    `claim instruction data is ${ix.data.length} bytes; expected at least 16 (8 discriminator + 8 amount).`
+    `claim instruction data is ${ix.data.length} bytes; expected exactly 16 (8 discriminator + 8 amount).`
   );
   const disc = ix.data.subarray(0, 8);
   assert(
@@ -117,8 +146,13 @@ export function verifyClaimVoucher(tx: Transaction, expect: VoucherExpectations)
   );
 
   // ---- 4. Every account is exactly the one we derive locally. ----
-  // Order is fixed by the program's ClaimWinnings struct. Deriving rather than
-  // trusting is what stops a hostile server redirecting the payout.
+  // Order and length are fixed by the program's ClaimWinnings struct. Deriving
+  // rather than trusting is what stops a hostile server redirecting the payout.
+  //
+  // All TEN are listed, including the three program ids. Anchor does validate
+  // those on-chain, so substituting one fails there — but a voucher naming a
+  // different "token program" is not a voucher worth signing, and an exact
+  // length additionally means nothing can be appended for the verifier to skip.
   const expectedAccounts: Array<{ name: string; key: PublicKey }> = [
     { name: 'user', key: expect.claimant },
     { name: 'admin', key: expect.expectedAdmin },
@@ -127,12 +161,16 @@ export function verifyClaimVoucher(tx: Transaction, expect: VoucherExpectations)
     { name: 'vault_usdc_account', key: getVaultUsdcAta(expect.programId, expect.usdcMint) },
     { name: 'vault_authority', key: getVaultAuthorityPda(expect.programId) },
     { name: 'usdc_mint', key: expect.usdcMint },
+    { name: 'system_program', key: SystemProgram.programId },
+    { name: 'token_program', key: TOKEN_PROGRAM_ID },
+    { name: 'associated_token_program', key: ASSOCIATED_TOKEN_PROGRAM_ID },
   ];
 
   assert(
-    ix.keys.length >= expectedAccounts.length,
+    ix.keys.length === expectedAccounts.length,
     'account-count',
-    `claim instruction has ${ix.keys.length} accounts, expected at least ${expectedAccounts.length}.`
+    `claim instruction has ${ix.keys.length} accounts, expected exactly ${expectedAccounts.length}. ` +
+      `Extra accounts reach the program as remaining_accounts and are not something a claim should carry.`
   );
 
   expectedAccounts.forEach((want, i) => {
@@ -173,6 +211,44 @@ export function verifyClaimVoucher(tx: Transaction, expect: VoucherExpectations)
     tx.feePayer !== undefined && tx.feePayer.equals(expect.claimant),
     'claimant-is-fee-payer',
     `fee payer is ${tx.feePayer?.toBase58() ?? 'unset'}, expected the claimant ${expect.claimant.toBase58()}.`
+  );
+
+  // ---- 8. The priority fee this voucher commits the claimant to is bounded. ----
+  // Step 7 just established the claimant pays the fee, which is precisely why
+  // this matters: every other check can pass while the transaction quietly
+  // carries a compute-unit price that costs the signer their whole SOL balance.
+  let unitLimit: bigint | null = null;
+  let unitPrice = 0n;
+
+  for (const cb of computeBudgetIxs) {
+    if (cb.data.length === 0) continue;
+    const kind = cb.data[0];
+
+    if (kind === CB_SET_UNIT_LIMIT && cb.data.length >= 5) {
+      const declared = BigInt(cb.data.readUInt32LE(1));
+      assert(
+        declared <= MAX_COMPUTE_UNIT_LIMIT,
+        'compute-unit-limit',
+        `compute unit limit ${declared} exceeds Solana's per-transaction maximum ${MAX_COMPUTE_UNIT_LIMIT}.`
+      );
+      unitLimit = declared;
+    } else if (kind === CB_SET_UNIT_PRICE && cb.data.length >= 9) {
+      unitPrice = cb.data.readBigUInt64LE(1);
+    }
+  }
+
+  // No declared limit means the runtime applies its own; assume the worst case
+  // so the bound cannot be sidestepped by simply omitting the limit.
+  const effectiveLimit = unitLimit ?? DEFAULT_COMPUTE_UNIT_LIMIT;
+  const priorityFeeLamports = (effectiveLimit * unitPrice) / 1_000_000n;
+
+  assert(
+    priorityFeeLamports <= MAX_PRIORITY_FEE_LAMPORTS,
+    'priority-fee-bounded',
+    `this voucher would pay a priority fee of ${priorityFeeLamports} lamports ` +
+      `(${effectiveLimit} CU x ${unitPrice} microLamports/CU), above the ${MAX_PRIORITY_FEE_LAMPORTS} ` +
+      `lamport ceiling. The claimant pays that fee, so an inflated compute unit price ` +
+      `drains SOL while every other part of the claim looks legitimate.`
   );
 
   return amount;
