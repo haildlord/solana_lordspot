@@ -545,6 +545,28 @@ Moves USDC from the vault to the named destination. Works even while paused
 
 # Pre-Mainnet Master Checklist
 
+## ✅ NODE_ENV no longer gates a drain path — but still set it correctly
+
+`backend/src/workers/webhookIngestWorker.ts` used to fall back to trusting the
+webhook payload's own logs when a transaction was not found on-chain, gated only
+on `config.nodeEnv !== 'production'`. **That fallback has been removed** — a
+transaction that is not on chain is now always treated as never having happened,
+in every environment. The chain is the only accepted source of purchase logs.
+
+Keep it that way. Re-introducing any "trust the payload" path means anyone
+holding the webhook secret can mint RelayOrders for tickets nobody paid for.
+
+`NODE_ENV` still matters for other reasons, so it remains on this checklist:
+
+- [ ] Set `NODE_ENV=production` — `solanaService` derives `isMainnet` partly from
+      it (`config.nodeEnv === 'production' || rpcUrl.includes('mainnet')`).
+- [ ] Verify it **on the running host**, not just in a config file or Dockerfile.
+
+Still open (defence in depth, not currently a live exploit): `ticketWorker`
+takes `amount_paid` from the decoded event without independently confirming the
+USDC transfer against the transaction's token balances. See
+`docs/security-findings.md`.
+
 Everything below was found by a full repo sweep done specifically to prepare
 for mainnet. It is organized by "what kind of mistake this prevents," not by
 file — deployment day goes file-by-file already; this is meant to be read
