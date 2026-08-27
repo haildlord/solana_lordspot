@@ -121,24 +121,20 @@ npm version 1.0.0
 npm publish --access public       # no tag → becomes `latest`
 ```
 
-### Provenance — blocked while the repo is private
+### Recommended: publish with provenance
 
 Publishing from GitHub Actions with `--provenance` attaches a signed attestation
-that the tarball was built from a specific commit, so integrators can verify the
-published code matches the source. For a library that signs money-moving
-transactions, that is worth real effort.
+that the tarball was built from a specific public commit, so integrators can
+verify the published code matches the source they audited. For a library that
+signs money-moving transactions, that is worth the setup.
 
-**It requires a PUBLIC source repository.** `haildlord/solana_lordspot` is
-currently private, so provenance is unavailable today. Two ways forward:
+Provenance requires a public source repository, which is why this SDK lives in
+its own repo rather than inside the LordsPot monorepo. The second reason matters
+more: `src/verifyVoucher.ts` is the file integrators are asked to trust with
+their users' wallets, and it should be readable by anyone evaluating it.
 
-- Make the monorepo public — unlikely, it holds the backend and deployment docs.
-- **Split the SDK into its own public repo.** This is the better option anyway:
-  integrators can read exactly what they are asked to trust, `verifyVoucher.ts`
-  becomes publicly auditable, and provenance works. The SDK has no dependency on
-  the rest of the monorepo.
-
-Until then, `repository` is deliberately omitted from `package.json` — pointing
-npm at a private repo puts a 404 link on the package page.
+Once `repository` is set in `package.json`, a release workflow needs
+`permissions: { id-token: write, contents: read }` and `npm publish --provenance`.
 
 ---
 
@@ -195,10 +191,12 @@ mainnet: {
 The mainnet genesis hash above is verified. `defaultRpcUrl` should be a paid
 endpoint in practice — the public one rate-limits hard.
 
-**Do not ship a mainnet build until the wider mainnet checklist in
-`solana_smart_contracts/OPERATIONS.md` is done.** The SDK working is necessary
-but not sufficient; that checklist covers the deployment and key-custody work
-that has to happen first.
+**Do not ship a mainnet build until LordsPot's own pre-mainnet checklist is
+done** (kept with the Solana program's operations runbook, in the main LordsPot
+repository). The SDK working is necessary but not sufficient: that checklist
+covers the program deployment and key-custody work that has to happen first, and
+shipping a `mainnet` entry here before it is complete points integrators at a
+program that is not ready to hold real money.
 
 ---
 
