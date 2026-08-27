@@ -1,6 +1,6 @@
 {
   "name": "lordspot-sdk",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Server-side SDK for buying Megapot lottery tickets from Solana and claiming winnings via LordsPot.",
   "license": "MIT",
   "repository": {
