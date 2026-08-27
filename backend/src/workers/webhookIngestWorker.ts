@@ -51,14 +51,18 @@ export const webhookIngestWorker = new Worker(
                     return;
                 }
                 logs = chainTx.meta?.logMessages ?? [];
-            } else if (config.nodeEnv !== 'production') {
-                // Dev-only fallback: local fixtures may reference devnet txs past RPC
-                // retention. NEVER allowed in production — chain or nothing.
-                console.warn(`[WORKER:webhook-ingest] Tx ${signature} not found on-chain — DEV fallback to payload logs.`);
-                const raw = inbox.rawPayload as any;
-                logs = raw?.meta?.logMessages ?? raw?.transaction?.meta?.logMessages ?? [];
             } else {
-                // RPC may simply lag behind the webhook — throw so BullMQ retries with backoff.
+                // Not on chain means it did not happen. There is deliberately NO
+                // fallback to the webhook payload's own logs here, in any environment:
+                // a payload we cannot check against the chain is attacker-controlled
+                // input, and trusting it lets anyone holding the webhook secret mint
+                // RelayOrders for tickets nobody paid for — spending real Base vault
+                // USDC and creating genuinely claimable winnings.
+                //
+                // RPC lag behind the webhook is the only legitimate way to land here,
+                // so throw and let BullMQ retry with backoff. If those retries are
+                // exhausted, the cron backup indexer (solanaIndexer.pollMissedTransactions)
+                // still picks the purchase up from the vault ATA's real signature history.
                 throw new Error(`Tx ${signature} not visible on-chain yet — will retry`);
             }
 

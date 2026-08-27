@@ -545,23 +545,27 @@ Moves USDC from the vault to the named destination. Works even while paused
 
 # Pre-Mainnet Master Checklist
 
-## 🔴 NODE_ENV must be exactly `production` — this one gates a drain path
+## ✅ NODE_ENV no longer gates a drain path — but still set it correctly
 
-`backend/src/workers/webhookIngestWorker.ts` has a dev-only fallback that trusts
-the webhook payload when a transaction is not found on-chain. It is gated on
-`config.nodeEnv !== 'production'`, an exact lowercase string compare against
-`process.env.NODE_ENV ?? 'development'`.
+`backend/src/workers/webhookIngestWorker.ts` used to fall back to trusting the
+webhook payload's own logs when a transaction was not found on-chain, gated only
+on `config.nodeEnv !== 'production'`. **That fallback has been removed** — a
+transaction that is not on chain is now always treated as never having happened,
+in every environment. The chain is the only accepted source of purchase logs.
 
-**Unset, empty, `Production`, `PRODUCTION`, `prod`, and `staging` all leave the
-fallback OPEN.** With the webhook secret, an attacker can then submit a forged
-`TicketPurchaseEvent` for a transaction that never existed; the backend takes
-`amount_paid` from the event without verifying any USDC moved, and the relayer
-spends real Base vault USDC fulfilling it — plus any winnings become claimable.
+Keep it that way. Re-introducing any "trust the payload" path means anyone
+holding the webhook secret can mint RelayOrders for tickets nobody paid for.
 
-- [ ] Verify `NODE_ENV=production` **on the running host**, not just in a config
-      file or Dockerfile.
-- [ ] Better: remove the fallback, or re-gate it on a separate explicitly-unsafe
-      flag. See `docs/security-findings.md` for the full chain and fix options.
+`NODE_ENV` still matters for other reasons, so it remains on this checklist:
+
+- [ ] Set `NODE_ENV=production` — `solanaService` derives `isMainnet` partly from
+      it (`config.nodeEnv === 'production' || rpcUrl.includes('mainnet')`).
+- [ ] Verify it **on the running host**, not just in a config file or Dockerfile.
+
+Still open (defence in depth, not currently a live exploit): `ticketWorker`
+takes `amount_paid` from the decoded event without independently confirming the
+USDC transfer against the transaction's token balances. See
+`docs/security-findings.md`.
 
 ---
 

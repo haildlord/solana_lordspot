@@ -12,6 +12,17 @@ Findings are ordered by severity. Each states the exploit chain concretely —
 
 ## 🔴 CRITICAL — Forged webhooks mint free tickets unless `NODE_ENV` is exactly `production`
 
+> **STATUS: FIXED** (2026-08-27). The fallback branch described below was removed
+> from `webhookIngestWorker.ts`. A transaction that is not found on-chain now
+> always throws and retries, in every environment — there is no payload-trusting
+> path left. The exploit chain is kept on record below so the reasoning survives,
+> and so nobody re-introduces the branch as a convenience.
+>
+> **Not yet done:** the defence-in-depth item at the end of this section —
+> `ticketWorker` still trusts `amount_paid` from the decoded event without
+> verifying the USDC transfer. That is no longer reachable by a forged webhook,
+> but it remains the reason a forged event would be *harmful* rather than inert.
+
 **Where:** `backend/src/workers/webhookIngestWorker.ts` (the `config.nodeEnv !== 'production'`
 branch), reachable via `POST /webhooks/helius`.
 
@@ -56,21 +67,34 @@ exact string comparison. Every one of these leaves the path **open**:
 A capitalisation typo in a deploy config silently re-opens a fund-draining path,
 with no error and no log to notice it by.
 
-### Fix
+### Fix — applied
 
-Not applied — this is live backend code on `v1_lordspot` and the change is the
-repo owner's call. Recommended, in order of preference:
+**Option 1 was taken: the fallback was deleted outright.** The `else` branch now
+throws unconditionally, so a signature that is not visible on chain is retried
+rather than believed.
 
-1. **Delete the fallback entirely.** The comment already says "NEVER allowed in
-   production — chain or nothing." Chain-or-nothing should simply be the only
-   behaviour; the dev convenience is not worth a fund-draining branch existing
-   in the codebase at all.
-2. If it must stay, gate it on a **separate, explicit, loudly-named** flag that
-   nothing sets by accident — e.g. `LORDSPOT_TRUST_WEBHOOK_PAYLOAD=i-understand-this-is-unsafe`
-   — rather than on `NODE_ENV`, which every platform sets differently.
-3. Additionally, **fail startup** if `NODE_ENV` is not one of a known set. A
-   server that boots happily on `NODE_ENV=Production` is a server that lies to
-   you about which mode it's in.
+Why deleting it was safe for legitimate traffic, verified before the change:
+
+- The only legitimate way to reach that branch is **RPC lag** behind the webhook.
+  BullMQ retries the job 6 times with exponential backoff from 3s (~3 minutes
+  total, `lib/queues.ts`), which covers ordinary lag.
+- If those retries are exhausted, the purchase is **still not lost**. The cron
+  backup indexer (`solanaIndexer.pollMissedTransactions`, every 30s) walks the
+  vault USDC ATA's real signature history, fetches logs from chain, and enqueues
+  straight to `ticketIngestQueue`.
+- That indexer only ever sees transactions that actually touched the vault ATA —
+  which is precisely the property a forged webhook cannot fake. The safety net
+  is structurally incapable of reproducing the hole that was closed.
+
+Not adopted, and why:
+
+- A separate explicitly-unsafe flag (e.g. `LORDSPOT_TRUST_WEBHOOK_PAYLOAD=...`)
+  was considered and rejected. It is safer than `NODE_ENV`, but it still leaves a
+  fund-draining branch in the codebase for a convenience the backup indexer
+  already provides.
+- **Still worth doing:** fail startup if `NODE_ENV` is not one of a known set. A
+  server that boots happily on `NODE_ENV=Production` lies to you about which mode
+  it is in, and `solanaService` still derives `isMainnet` from it.
 
 Also worth doing regardless: `ticketWorker` trusts `amount_paid` from the event
 without confirming the USDC transfer. Even with the fallback removed, verifying
@@ -150,9 +174,9 @@ trusting LordsPot's key custody, not merely LordsPot's server.
 Add to any production deploy checklist:
 
 - [ ] `NODE_ENV=production` — **exactly that string, lowercase.** Verify it on
-      the running host, not just in a config file. Until the fallback above is
-      removed, this single variable is the difference between a safe backend and
-      a drainable one.
+      the running host, not just in a config file. This no longer gates a drain
+      path (the fallback is gone), but `solanaService` still derives `isMainnet`
+      from it.
 - [ ] `HELIUS_WEBHOOK_SECRET` set, and rotated if it has ever appeared in a log,
       screenshot, or committed file.
 - [ ] Backend deployed **separately per network** — a devnet deployment must
