@@ -232,32 +232,50 @@ Core problem: the frontend assumes *a browser with a wallet extension*; an agent
 is *a Node process with a raw keypair*. `claimVoucher.ts` takes a
 `WalletContextState`; `program.ts` is a React hook. Neither survives the move.
 
-### Estimate: **3–4 focused days**
+### ✅ BUILT — the sections above are the original plan, kept for rationale
 
-- **Day 1** — config injection (`createLordsPot({...})` replacing
-  `import.meta.env`), port the clean pieces, ESM/CJS build setup
-- **Day 2** — buy path: signer interface instead of wallet adapter, keep 65-cap
-  chunking, add on-chain ball-range read before generating tickets
-- **Day 3** — claim path + plain `fetch` API wrappers (no TanStack)
-- **Day 4** — docs + working devnet example + testing as an *outside consumer*
-  (fresh dir, `npm install`, does it actually work?)
+The SDK now exists on this branch under `sdk/`. Estimate was 3–4 days; actual
+was one focused session because the security work (voucher verification) turned
+out to be the bulk of it, not the porting.
 
-**Day 4 is the one that slips**, and an SDK that compiles but has confusing docs
-is worse than none — the partner hand-rolls against the IDL anyway.
+**What shipped:**
+- `sdk/src/` — buy, claim, on-chain state reads, draw-result helpers
+- `sdk/README.md` — **hand this to integrators**
+- `sdk/PUBLISHING.md` — maintainer-only setup/publish steps, excluded from the
+  npm tarball
+- `sdk/examples/agent.ts` — runnable end-to-end agent
+- 41 tests (`npm test`), including 13 voucher-attack cases that are release
+  blockers
 
-**The claim half alone is ~half a day** (two REST calls + one sign, no chunking,
-no on-chain validation) if it needs shipping standalone first.
+**Design decisions that departed from the plan above:**
+- **No Anchor dependency.** Instructions are hand-encoded, keeping runtime deps
+  to `@solana/web3.js` + `@solana/spl-token` (0 audit findings). Verified
+  byte-for-byte against Anchor output and simulated against the live program.
+- **Protocol params are read live from chain**, never hardcoded — ball ranges
+  and the ticket cap change and would otherwise silently break.
+- **`network` is required and never inferred**, then verified against the RPC's
+  genesis hash before anything is signed.
+- **Draw-result helpers added** (`getTicketMatch` etc.) — not in the original
+  plan, but Fede's reveal mode needs them and the naive implementation
+  (index-by-index comparison) is wrong, since normals are a set.
 
-### Recommendation
+**Verified against the live devnet backend:** all response shapes parse, the
+match helper agrees with an independent recomputation on real draw data, and the
+verifier accepts a genuine admin-signed voucher (not just synthetic test ones).
 
-**Don't build speculatively.** Tell Fede Tier 1 works today (program ID, IDL,
-the four endpoints) — unblocks his hackathon immediately at zero cost. Build the
-SDK if he ships and drives real volume; it pays for itself at $0.10/ticket. Most
-hackathon projects die after judging.
+**Still open before handing to a partner:**
+1. `sdk/src/config.ts` devnet `apiUrl` is still `http://localhost:3000`
+   (`TODO(mainnet-launch)`). Published as-is it works only on one machine.
+2. npm org/name decision + 2FA — see `sdk/PUBLISHING.md`.
+3. A real end-to-end claim (sign + submit) has not been run; everything up to
+   the signature is proven, but the signing step needs the wallet owner.
+4. Raise the 60 req/min rate limit for registered partners.
 
-**Worth doing in ~30 min regardless:** a one-page integration doc — program ID,
-IDL location, endpoints, and the seven gotchas in §6. That's 90% of the SDK's
-real value at 2% of the cost.
+### Original recommendation (still valid for scoping other partners)
+
+Tier 1 works today with zero code from us — program ID, IDL, the four endpoints.
+That unblocks a partner immediately. The SDK is the polish layer, worth building
+when a partner drives real volume; it pays for itself at $0.10/ticket.
 
 ---
 
@@ -296,6 +314,37 @@ through ~14 sequential Base chunks.
 ---
 
 ## 10. Known gaps carried forward
+
+- **The FRONTEND signs claim vouchers without verifying them.**
+  `frontend/src/solana/claimVoucher.ts` does
+  `Transaction.from(...)` → `wallet.signTransaction(tx)` with **no checks at
+  all**. If the backend were ever compromised it could return a transaction
+  that drains the signer's wallet (an SPL transfer, an `approve`, a
+  `closeAccount`) and the frontend would sign it — the user would see
+  "claiming winnings" and lose everything.
+  The SDK already solves this (`sdk/src/verifyVoucher.ts`, 13 attack cases
+  covered). **That verifier should be backported to the frontend.** It is
+  lower risk there than in the SDK (you control your own frontend and
+  backend), which is why it wasn't treated as blocking — but it is the same
+  class of bug and the fix already exists.
+
+- **Backend must be deployed SEPARATELY per network.** The backend holds the
+  admin signing key, which makes it a fund-moving service rather than a
+  stateless API. A devnet deployment must never hold the mainnet admin key,
+  and one server switching on a `?network=` param means a bug in a devnet code
+  path can reach mainnet funds. Run `api.lordspot.io` and
+  `api-devnet.lordspot.io` as genuinely separate deployments, each with its
+  own admin key, database, and Base contracts. Env vars that differ:
+  `SOLANA_RPC_URL`, `SOLANA_PROGRAM_ID`, `SOLANA_PRIVATE_KEY`, `BASE_RPC_URL`,
+  `BASE_CHAIN_ID`, `LORDSPOT_BASE_VAULT`, `USDC_BASE_ADDRESS`,
+  `MEGAPOT_BASE_ADDRESS`, `DATABASE_URL`.
+
+- **Squads belongs on the UPGRADE AUTHORITY, not on `state.admin`.** Easy to
+  get backwards. The admin key co-signs a claim voucher every few minutes and
+  must sign instantly and automatically — multisig there would break claims
+  entirely. Multisig the key that can *replace the bytecode* (and optionally
+  the treasury key), and leave the operational admin a single hot key. See
+  OPERATIONS.md for the write-buffer → Squads-UI upgrade flow this implies.
 
 - **Base vault has no hot/cold split.** `DeployVault.s.sol` derives `owner` and
   `relayer` from the *same* env var, so the always-online backend key is also
