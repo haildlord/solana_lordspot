@@ -138,6 +138,18 @@ async function request<T>(
 
   if (!res.ok) {
     const message = (body as { error?: string })?.error ?? `HTTP ${res.status}`;
+
+    // Map the API's meaningful status codes onto specific error codes so callers
+    // can branch on `err.code` instead of matching message text. Without this a
+    // caller sees a generic API_ERROR for the ordinary "nothing to claim" case
+    // and cannot distinguish it from a real outage.
+    if (res.status === 404) {
+      throw new LordsPotError('NOTHING_TO_CLAIM', message);
+    }
+    if (res.status === 503) {
+      // The claims route returns 503 while the protocol is mid-rollover.
+      throw new LordsPotError('PROTOCOL_PAUSED', message);
+    }
     throw new LordsPotError('API_ERROR', `LordsPot API error: ${message}`);
   }
   return body as T;
