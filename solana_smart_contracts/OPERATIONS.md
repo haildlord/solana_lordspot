@@ -545,6 +545,27 @@ Moves USDC from the vault to the named destination. Works even while paused
 
 # Pre-Mainnet Master Checklist
 
+## 🔴 NODE_ENV must be exactly `production` — this one gates a drain path
+
+`backend/src/workers/webhookIngestWorker.ts` has a dev-only fallback that trusts
+the webhook payload when a transaction is not found on-chain. It is gated on
+`config.nodeEnv !== 'production'`, an exact lowercase string compare against
+`process.env.NODE_ENV ?? 'development'`.
+
+**Unset, empty, `Production`, `PRODUCTION`, `prod`, and `staging` all leave the
+fallback OPEN.** With the webhook secret, an attacker can then submit a forged
+`TicketPurchaseEvent` for a transaction that never existed; the backend takes
+`amount_paid` from the event without verifying any USDC moved, and the relayer
+spends real Base vault USDC fulfilling it — plus any winnings become claimable.
+
+- [ ] Verify `NODE_ENV=production` **on the running host**, not just in a config
+      file or Dockerfile.
+- [ ] Better: remove the fallback, or re-gate it on a separate explicitly-unsafe
+      flag. See `docs/security-findings.md` for the full chain and fix options.
+
+---
+
+
 Everything below was found by a full repo sweep done specifically to prepare
 for mainnet. It is organized by "what kind of mistake this prevents," not by
 file — deployment day goes file-by-file already; this is meant to be read
