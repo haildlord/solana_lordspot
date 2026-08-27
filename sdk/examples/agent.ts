@@ -24,9 +24,15 @@ import {
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 function b58decode(s: string): Uint8Array {
   let n = 0n;
-  for (const ch of s) {
-    const i = B58.indexOf(ch);
-    if (i < 0) throw new Error(`invalid base58 character: ${ch}`);
+  for (let pos = 0; pos < s.length; pos++) {
+    const i = B58.indexOf(s[pos]!);
+    if (i < 0) {
+      // Report the POSITION, never the character itself. Echoing it would put a
+      // fragment of the operator's secret key into stdout, logs, and any log
+      // aggregator downstream — a small leak, but there is no reason to accept
+      // any leak of secret input.
+      throw new Error(`Invalid base58 in AGENT_PRIVATE_KEY at position ${pos}. Key not shown.`);
+    }
     n = n * 58n + BigInt(i);
   }
   const bytes: number[] = [];
@@ -125,6 +131,11 @@ main().catch((err) => {
     // Only these are worth retrying; everything else needs a fix.
     process.exit(err.code === 'PROTOCOL_PAUSED' || err.code === 'RPC_ERROR' ? 75 : 1);
   }
-  console.error(err);
+  // Deliberately prints only the message, NOT the raw error object. Dumping an
+  // unknown error wholesale can surface whatever a lower-level library happened
+  // to attach to it — and this process holds a secret key in memory. Print the
+  // message; set DEBUG_LORDSPOT=1 if you genuinely need the full object.
+  console.error(`Unexpected error: ${(err as Error)?.message ?? String(err)}`);
+  if (process.env.DEBUG_LORDSPOT === '1') console.error(err);
   process.exit(1);
 });
