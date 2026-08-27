@@ -319,12 +319,22 @@ anything that differs:
 | Exactly one LordsPot instruction | Bundling a hidden second call |
 | No foreign programs (except ComputeBudget) | A smuggled token/SOL transfer |
 | Correct `claim_winnings` discriminator | A different instruction in disguise |
+| Instruction data is exactly 16 bytes | Trailing payload nothing inspects |
 | Amount matches an independent summary read | A silently inflated payout |
 | Amount within the on-chain ceiling | Absurd amounts from a bad upstream number |
-| Every account derived locally and compared | Payout redirected to an attacker |
+| All ten accounts derived locally, exact count | Payout redirected, or extras appended past the checks |
 | Only claimant + admin may be signers | Sneaking in an extra authorisation |
 | Admin signature verifiably present | Signing something never authorised |
 | Claimant is the fee payer | Fee-payer substitution |
+| **Priority fee bounded at 0.01 SOL** | **Draining your SOL through the compute budget** |
+
+That last one is less obvious than the rest, so it is worth stating plainly: you
+pay the network fee for your own claim, and a priority fee is
+`compute_unit_limit × compute_unit_price`. A hostile server could otherwise
+return a claim that is correct in every visible way — right amount, right
+accounts, properly admin-signed — while carrying a compute unit price large
+enough to consume your entire SOL balance in fees. The bound is roughly 100,000×
+a normal fee, so legitimate claims are unaffected.
 
 Failing any check throws `VoucherVerificationError` **before a signature
 exists**. That is a security alert, not a transient fault — **never retry it.**
