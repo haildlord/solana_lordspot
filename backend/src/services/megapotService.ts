@@ -40,7 +40,16 @@ class MegapotService {
   private readonly CACHE_KEY = 'megapot-active_round';
   private readonly PAUSE_KEY = 'megapot-is_paused';
   private readonly TRANSITION_LOCK_KEY = 'megapot-transition_lock';
-  private readonly PRE_EMPTIVE_BUFFER_MS = (5 * 60 + 60) * 1000; // -> 5 min + 60 sec = 315,000 ms 
+  // -> 5 min + 60 sec = 360,000 ms = 6 MINUTES. (Was documented as 315,000 ms,
+  // which is wrong arithmetic for the same expression — the value never changed,
+  // only the comment was misleading.)
+  //
+  // This is the transition WINDOW: checkEpochTransition only acts once the round
+  // is within this long of ending. Anything that polls it must run comfortably
+  // more often than 6 minutes or the window can be missed — see POLL_MS in
+  // cron/index.ts, which is pinned to 2 minutes for exactly this reason. If this
+  // buffer ever shrinks, that interval must shrink with it.
+  private readonly PRE_EMPTIVE_BUFFER_MS = (5 * 60 + 60) * 1000;
   // (2 * 60 + 15) * 1000;
 
   private toBigInt(amount: TokenAmount): bigint {
@@ -601,7 +610,7 @@ class MegapotService {
 
   public isRoundLocked(round: RoundState): boolean {
     const endMs = new Date(round.ended_at).getTime();
-    return Date.now() >= endMs - this.PRE_EMPTIVE_BUFFER_MS; // * 10 mins + 15 secs
+    return Date.now() >= endMs - this.PRE_EMPTIVE_BUFFER_MS; // * 6 mins (PRE_EMPTIVE_BUFFER_MS)
   }
 
   public async isProtocolPaused(): Promise<boolean> {
@@ -667,7 +676,7 @@ public async syncPauseStateFromChain(): Promise<void> {
   public async checkEpochTransition(): Promise<void> {
     const round = await this.getRoundState();
     if (!round) return;
-    if (Date.now() >= new Date(round.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS) { // * 10 mins + 15 secs
+    if (Date.now() >= new Date(round.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS) { // * 6 mins (PRE_EMPTIVE_BUFFER_MS)
       console.log(`[CRON:heartbeat] Epoch ${round.id} is due — ensuring transition runs.`);
       await this.safeTransition();
     }
@@ -703,7 +712,7 @@ public async syncPauseStateFromChain(): Promise<void> {
 
     if (
       current &&
-      Date.now() < new Date(current.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS // * 10 mins + 15 secs
+      Date.now() < new Date(current.ended_at).getTime() - this.PRE_EMPTIVE_BUFFER_MS // * 6 mins (PRE_EMPTIVE_BUFFER_MS)
     ) {
       console.log(`[CRON:transition] Cached round ${current.id} is not due yet — nothing to do.`);
       return true;
@@ -867,7 +876,7 @@ public async syncPauseStateFromChain(): Promise<void> {
     const diffMs =
         new Date(saved.ended_at).getTime() -
         Date.now() -
-        this.PRE_EMPTIVE_BUFFER_MS; // * 10 mins + 15 secs
+        this.PRE_EMPTIVE_BUFFER_MS; // * 6 mins (PRE_EMPTIVE_BUFFER_MS)
 
     if (diffMs <= 0) {
       console.log(`[CRON:setup] WARNING: Time buffer expired! In danger zone — triggering immediate transition loop.`);

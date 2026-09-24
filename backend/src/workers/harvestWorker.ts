@@ -28,7 +28,21 @@ import { hacked_bytecode } from '../../hacked_bytecode'; // -> remove in product
  * everything (no submit/confirm split needed).
  */
 
-const POLL_MS = 60_000;
+// Was 60s. Like settlement, this is a crash-recovery FALLBACK rather than the
+// trigger: settlementWorker publishes EPOCH_GRADED the instant it finishes
+// grading an epoch, and the onEpochGraded subscription below starts harvesting
+// immediately. Harvesting still begins the moment there is anything to harvest.
+//
+// Harvest also only ever has work once a day (after a drawing is graded), so a
+// 60s timer meant 1,440 wake-ups for one event — and each one took the Redis
+// lock before finding nothing.
+//
+// Kept at 2 minutes rather than longer for the same reason as settlement: the
+// +5 min padding on ended_at is the window in which winnings must be claimed
+// back to the Base vault, invisibly, before the frontend reveals the drawing. A
+// fallback longer than that window would, on a dropped EPOCH_GRADED event, let
+// users see a settled draw whose winnings had not been harvested yet.
+const POLL_MS = 2 * 60_000; // 2 min — fallback only; must stay INSIDE the 5-min reveal window
 const CHUNK_SIZE = 50; // ~46% gas savings vs singles already at this size; keeps the all-or-nothing blast radius small
 const PENDING_TIMEOUT_MS = 2 * 60_000;
 const LOCK_KEY = 'harvest_lock';

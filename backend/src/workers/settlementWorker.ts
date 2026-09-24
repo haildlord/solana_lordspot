@@ -44,7 +44,26 @@ import { onEpochSettled, publishEpochGraded } from '../lib/epochEvents';
  * misread table — the failure mode "winner marked LOST" must be impossible.
  */
 
-const POLL_MS = 60_000;             // 1 min
+// Was 60s, i.e. 1,440 checks a day for something that happens ONCE a day — a
+// drawing settles at the epoch rollover and at no other time.
+//
+// This interval is a crash-recovery FALLBACK, not the trigger. The real trigger
+// is already event-driven: megapotService publishes EPOCH_SETTLED the moment it
+// saves a settled round, and the onEpochSettled subscription below grades it
+// immediately. Lengthening this changes nothing about how fast a draw is graded
+// in normal operation.
+//
+// The fallback only earns its keep if the pub/sub nudge is missed — a restart
+// across the rollover window, or Redis dropping the message.
+//
+// It is 2 minutes rather than something longer BECAUSE OF THE PRODUCT'S 5-MINUTE
+// WINDOW. parseRoundState pads ended_at by +5 min past Megapot's real end, and
+// that gap is when grading and harvesting happen invisibly, so that the instant
+// the frontend reveals a drawing the results and claimable winnings are already
+// there. A fallback longer than 5 minutes would, on a dropped event, let that
+// reveal arrive before the grading did — users seeing a finished draw with no
+// winnings. Anything under the window keeps that failure invisible.
+const POLL_MS = 2 * 60_000;         // 2 min — fallback only; must stay INSIDE the 5-min reveal window
 const TICKET_BATCH = 500;
 const MAX_BATCHES_PER_EPOCH = 2_000; // runaway guard: 1M tickets/epoch hard stop
 const BIG_WIN_ALERT_UNITS = 1_000_000_000n; // $1,000 net (6dp) — page a human, liquidity may be needed

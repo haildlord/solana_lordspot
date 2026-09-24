@@ -5,17 +5,29 @@ import { config } from '../lib/config';
 
 const connection = new Connection(config.solana.rpcUrl, 'confirmed');
 
+const CURSOR_ID = 'solana_vault';
+
 export async function pollMissedTransactions(): Promise<number> {
   const vaultAta = config.solana.vaultUsdcAta;
   if (!vaultAta) {
     return 0;
   }
 
-  const cursor = await prisma.indexerCursor.upsert({
-    where: { id: 'solana_vault' },
-    create: { id: 'solana_vault' },
-    update: {},
-  });
+  // READ, not upsert. This used to be an `upsert` — a database WRITE on every
+  // single poll, forever, even when the chain had nothing new. That one line was
+  // enough on its own to keep the database permanently awake (it is what pushed
+  // the old Neon deployment past its free compute-hour allowance). The row is
+  // created exactly once, on the first run this database ever sees; after that
+  // this is a plain read. The upsert is kept for that create because two poller
+  // processes starting at once would otherwise race on the insert.
+  let cursor = await prisma.indexerCursor.findUnique({ where: { id: CURSOR_ID } });
+  if (!cursor) {
+    cursor = await prisma.indexerCursor.upsert({
+      where: { id: CURSOR_ID },
+      create: { id: CURSOR_ID },
+      update: {},
+    });
+  }
 
   const sigs = await connection.getSignaturesForAddress(
     new PublicKey(vaultAta),
@@ -50,7 +62,7 @@ export async function pollMissedTransactions(): Promise<number> {
 
   if (sigs.length > 0) {
     await prisma.indexerCursor.update({
-      where: { id: 'solana_vault' },
+      where: { id: CURSOR_ID },
       data: { signature: sigs[0].signature },
     });
   }
