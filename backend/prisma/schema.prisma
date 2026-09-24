@@ -1,6 +1,3 @@
-//OHH YEAAAHHH DADDYYY!!!!!!!!!!!
-
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
