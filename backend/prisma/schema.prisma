@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  SOLANA_CONFIRMED // parsed from chain, not yet relayed
+  QUEUED // ready for Base relay
+  DEFERRED // epoch locked / megapot paused — retry next epoch
+  PROCESSING // relayer has lock
+  BASE_SUBMITTED // tx broadcast, awaiting confirmation
+  SUCCESS // Megapot tickets minted
+  RETRY_PENDING // transient failure, will retry
+  FAILED_PERMANENT // bad ticket data, needs manual ops
+}
+
+enum WinStatus {
+  DRAW_PENDING
+  LOST
+  WON_UNCLAIMED
+  WON_FREE_TICKET
+  CLAIMED_ON_BASE
+  PAID_OUT_ON_SOLANA
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  SKIPPED
+  FAILED
+}
+
+enum HarvestStatus {
+  SUBMITTED // batch created; tx broadcast (or crash-recovering toward it)
+  CONFIRMED // receipt landed, tickets marked CLAIMED_ON_BASE
+  FAILED // reverted/dropped — tickets released for the next batch
+}
+
+enum PayoutStatus {
+  PENDING // voucher issued (admin-signed), awaiting user submission
+  CONFIRMED // claim tx landed — tickets marked PAID_OUT_ON_SOLANA
+  EXPIRED // blockhash expired unused — tickets released
+  FAILED // claim tx landed but errored — tickets released, needs review
+}
+
+model WebhookInbox {
+  id          String        @id @default(uuid())
+  signature   String        @unique
+  source      String        // "helius" | "poller"
+  rawPayload  Json
+  status      WebhookStatus @default(RECEIVED)
+  error       String?
+  createdAt   DateTime      @default(now())
+  processedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+model RelayOrder {
+  hash             String         @id
+  signature        String         @unique
+  buyer            String         @db.VarChar(44)
+  purchaseEpoch    Int 
+  fulfillEpoch     Int? 
+  amountUsdc       BigInt 
+  ticketCount      Int
+  lastBought       DateTime
+  status           OrderStatus    @default(SOLANA_CONFIRMED)
+  attemptCount     Int            @default(0)
+  lastError        String?
+  nextRetryAt      DateTime?
+  baseTxHash       String?        // legacy single-tx field — unset for orders relayed as multiple RelayBatch rows; see Ticket.baseTxHash for the per-ticket source of truth
+  megapotTicketIds String[]       @default([])
+  tickets          Ticket[]
+  attempts         RelayAttempt[]
+  batches          RelayBatch[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@index([buyer])
+  @@index([fulfillEpoch])
+}
+
+model RelayAttempt {
+  id         String     @id @default(uuid())
+  orderHash  String
+  relayOrder RelayOrder @relation(fields: [orderHash], references: [hash])
+  attemptNum Int
+  baseTxHash String?
+  error      String?
+  createdAt  DateTime   @default(now())
+
+  @@index([orderHash])
+}
+
+/// One buyTickets() transaction covering a chunk (≤15) of one order's tickets.
+/// Orders larger than the per-tx chunk size relay as multiple RelayBatch rows
+/// instead of one — EIP-7825 caps a single Base transaction at 16,777,216 gas,
+/// and this contract's per-ticket combo-tracking cost (~800-824k gas/ticket)
+/// makes anything much above 15 tickets exceed that in one tx. Mirrors
+/// HarvestBatch's exact crash-safety shape: tickets are bound to a batch row
+/// BEFORE broadcasting, so a crash mid-flight is always recoverable from
+/// Postgres + the chain alone, same as the harvest side.
+model RelayBatch {
+  id          String        @id @default(uuid())
+  orderHash   String
+  relayOrder  RelayOrder    @relation(fields: [orderHash], references: [hash])
+  batchIndex  Int           // 0-based position among the order's batches, for ordering/logging only
+  txHash      String?       // null only in the tiny window between row creation and broadcast
+  status      HarvestStatus @default(SUBMITTED) // same SUBMITTED/CONFIRMED/FAILED shape as harvest — reused, not duplicated
+  error       String?
+  tickets     Ticket[]
+  createdAt   DateTime      @default(now())
+  confirmedAt DateTime?
+
+  @@index([orderHash, status])
+  @@index([status])
+}
+
+model Ticket {
+  id           String     @id @default(uuid())
+  orderHash    String
+  relayOrder   RelayOrder @relation(fields: [orderHash], references: [hash])
+  bonusBall    Int        @db.SmallInt
+  normalBalls  Int[]      @db.SmallInt
+  megapotNftId String?
+  baseTxHash   String?    // set alongside megapotNftId once this ticket's RelayBatch confirms — the real per-ticket source of truth (RelayOrder.baseTxHash is legacy/single-tx only)
+  winStatus    WinStatus  @default(DRAW_PENDING)
+  winAmount    BigInt     @default(0)
+
+  // Free-ticket tiers (1 and 4) are excluded from cash payout vouchers —
+  // they become replay credit in the future product. Set at settlement time;
+  // survives the WON_FREE_TICKET → CLAIMED_ON_BASE transition where the
+  // winStatus distinction is otherwise lost.
+  isFreeTicketTier Boolean @default(false)
+
+  harvestBatch   HarvestBatch? @relation(fields: [harvestBatchId], references: [id])
+  harvestBatchId String?
+  payoutClaim    PayoutClaim?  @relation(fields: [payoutClaimId], references: [id])
+  payoutClaimId  String?
+  relayBatch     RelayBatch?   @relation(fields: [relayBatchId], references: [id])
+  relayBatchId   String?
+
+  @@index([orderHash])
+  @@index([winStatus])
+  @@index([harvestBatchId])
+  @@index([payoutClaimId])
+  @@index([relayBatchId])
+}
+
+model IndexerCursor {
+  id        String   @id @default("solana_vault")
+  signature String? // last processed signature for poller
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Live protocol + current Megapot round (frontend ticket picker)
+ */
+model ProtocolState {
+  id              String    @id @default("singleton")
+  isPaused        Boolean   @default(false)
+  currentEpochId  Int?
+  endedAt         DateTime?
+  maxNormalBall   Int?      @db.SmallInt
+  maxBonusBall    Int?      @db.SmallInt
+  jackpotsWon     Int?      @db.SmallInt
+  prizesWon       BigInt?
+  prizePoolAmount BigInt?
+  updatedAt       DateTime  @updatedAt
+}
+
+/**
+ * Settled past epochs only — drawing results history
+ */
+model MegapotEpoch {
+  megapotId            Int @id
+
+  totalTicketCount     Int
+  lordsPotTicketCount  Int
+
+  totalWinnersCount    Int
+  lordsPotWinnersCount Int
+
+  totalPaidAmount      BigInt?
+  lordsPotPaidAmount   BigInt?
+
+  jackpot              BigInt
+
+  topPrizeAmount       BigInt
+  topPrizeWinnersCount Int
+
+  winningNormals       Int[]  @db.SmallInt
+  winningBonusBall     Int    @db.SmallInt
+  prizeTiers           Json
+
+  normalMax Int? @db.SmallInt
+  bonusMax  Int? @db.SmallInt
+
+  // The real Megapot round's ended_at — distinct from drawnAt (settled_at, when
+  // Megapot posted results, which can lag ended_at slightly). This is the precise
+  // anchor the frontend needs for "hide new results until ended_at + 10min" —
+  // ProtocolState.endedAt only ever holds the CURRENT round's end time, so once
+  // a round moves on, this is the only place its real end time survives.
+  endedAt DateTime?
+  drawnAt DateTime?
+  ticketsSettledAt DateTime?
+  ticketsHarvestedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// One Base claimWinnings() transaction: which tickets rode in it, and what
+/// happened. Mirrors the RelayOrder/RelayAttempt philosophy — every money
+/// movement gets a durable, auditable row (crash recovery reads this).
+model HarvestBatch {
+  id          String        @id @default(uuid())
+  megapotId   Int           // epoch being harvested
+  txHash      String?       // null only in the tiny window between row creation and broadcast
+  status      HarvestStatus @default(SUBMITTED)
+  amountGross BigInt        @default(0) // sum of DB winAmounts bound to this batch
+  error       String?
+  tickets     Ticket[]
+  createdAt   DateTime      @default(now())
+  confirmedAt DateTime?
+
+  @@index([megapotId, status])
+  @@index([status])
+}
+
+/// One issued claim voucher (admin-co-signed Solana tx). txSignature is the
+/// fee payer's (admin's) signature = THE transaction signature, known at
+/// issuance — so the confirmer can poll the chain directly, trusting nothing.
+model PayoutClaim {
+  id                   String       @id @default(uuid())
+  wallet               String       @db.VarChar(44)
+  amountUsdc           BigInt       @default(0)
+  status               PayoutStatus @default(PENDING)
+  txSignature          String?      @unique
+  lastValidBlockHeight BigInt? // voucher dies past this height — expiry is chain-derived
+  error                String?
+  tickets              Ticket[]
+  createdAt            DateTime     @default(now())
+  confirmedAt          DateTime?
+
+  @@index([wallet, status])
+  @@index([status])
+}

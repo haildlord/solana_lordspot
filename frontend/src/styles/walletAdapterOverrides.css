@@ -1,0 +1,48 @@
+/**
+ * @solana/wallet-adapter-react-ui ships its own class names we don't control,
+ * so these overrides are deliberately global (not a CSS Module) — this is the
+ * one legitimate exception to "external, scoped CSS per component."
+ */
+@import './tokens.css';
+
+.wallet-adapter-button {
+  background: var(--color-surface-raised) !important;
+  border: 1px solid var(--color-border-strong) !important;
+  border-radius: var(--radius-md) !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.02em;
+  height: auto !important;
+  padding: 10px 18px !important;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.wallet-adapter-button:not([disabled]):hover {
+  background: var(--color-surface) !important;
+  border-color: var(--color-gold-500) !important;
+}
+
+.wallet-adapter-button-start-icon {
+  margin-right: 8px;
+}
+
+.wallet-adapter-modal-wrapper {
+  background: var(--color-surface-raised) !important;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-card);
+}
+
+.wallet-adapter-modal-title {
+  color: var(--color-text) !important;
+  font-family: var(--font-sans) !important;
+}
+
+.wallet-adapter-modal-list li .wallet-adapter-button {
+  background: var(--color-surface) !important;
+}
+
+.wallet-adapter-modal-button-close {
+  background: var(--color-surface) !important;
+}

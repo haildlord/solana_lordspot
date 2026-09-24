@@ -1,0 +1,756 @@
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-4) var(--space-16);
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-6);
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-12) 0;
+}
+
+/* --- List: Upcoming / Previous sections --- */
+.section {
+  margin-bottom: var(--space-8);
+}
+
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  margin-bottom: var(--space-4);
+}
+
+.cardList {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  text-align: center;
+  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-gold-glow);
+}
+
+.cardCountdownWrap {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+/* Purchase hasn't relayed to Base yet — no countdown clock until it's actually
+   confirmed in the drawing, just a neutral in-progress marker. */
+.cardProcessing {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--color-border-strong);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--color-text-dim);
+}
+
+.cardProcessingDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-info);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* Countdown hit zero — the backend is almost certainly already done (grading
+   runs the instant an epoch settles, not on a delay), we just haven't
+   refetched yet. A glowing "about to happen" marker instead of a dead
+   "DRAWING NOW" placeholder for however long that gap is. */
+.cardReveal {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(212, 175, 55, 0.18);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--color-gold-500);
+  animation: revealGlow 1.4s ease-in-out infinite;
+}
+
+.cardRevealDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-gold-500);
+}
+
+.heroRevealBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  background: rgba(212, 175, 55, 0.16);
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-gold-500);
+  animation: revealGlow 1.4s ease-in-out infinite;
+}
+
+@keyframes revealGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(212, 175, 55, 0.25); }
+  50% { box-shadow: 0 0 18px rgba(212, 175, 55, 0.6); }
+}
+
+.cardBadges {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.winBadge {
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.freeBadge {
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--color-violet-300);
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.cardCount {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--color-text);
+  margin-top: var(--space-1);
+}
+
+.cardDate {
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.cardHint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-faint);
+  margin-top: -2px;
+}
+
+/* --- Ultra-Shiny Transparent Glass Stub --- */
+.stub {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  
+  /* 1. High Transparency + Sharp Diagonal Glare */
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.5) 0%,     /* Strong highlight top-left */
+    rgba(255, 255, 255, 0.05) 25%,   /* Sharp drop-off */
+    rgba(255, 255, 255, 0.0) 50%,    /* Completely clear middle */
+    rgba(255, 255, 255, 0.02) 80%,   /* Faint clear middle */
+    rgba(255, 255, 255, 0.15) 100%   /* Bounce light bottom-right */
+  );
+  
+  /* 2. Frosted but Highly Transparent Distortion */
+  backdrop-filter: blur(8px) saturate(110%);
+  -webkit-backdrop-filter: blur(8px) saturate(110%);
+  
+  /* 3. 3D Polished Glass Edges 
+        (Bright on the top/left where light hits, dark/faint on the bottom/right) */
+  border-top: 1px solid rgba(255, 255, 255, 0.7);
+  border-left: 1px solid rgba(255, 255, 255, 0.4);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+
+  /* 4. Deep shadow to lift the transparent plane off the background */
+  box-shadow: 
+    0 15px 35px rgba(0, 0, 0, 0.15),           /* Floating shadow */
+    inset 0 0 20px rgba(255, 255, 255, 0.05);  /* Faint inner glow */
+}
+
+.stubBalls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.stubMark {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: var(--color-gold-500);
+  opacity: 0.9; 
+  /* Glow effect so the text pops behind the shiny glass */
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.4); 
+}
+
+.plainRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+}
+
+.plainRow:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+
+/* One continuous scrollable card instead of a stack of gapped boxes — rows
+   inside are separated by a hairline (see .plainRow/.row :not(:first-child))
+   rather than a gap, and the whole thing scrolls internally once it grows
+   past max-height instead of pushing the page down indefinitely. */
+.plainList,
+.groupList {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.purchasedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--space-6) 0 var(--space-3);
+}
+
+.purchasedTitle {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.purchasedCount {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+}
+
+/* --- Transaction history --- */
+.txSection {
+  margin-top: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  padding: var(--space-4);
+}
+
+.txHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+}
+
+.txList {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-4);
+}
+
+.txRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) 0;
+}
+
+.txRow:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+
+.txMeta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.txCount {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.txDate {
+  font-size: 11px;
+  color: var(--color-text-dim);
+}
+
+/* --- Dual proof-of-tx: LordsPot relays, so every order leaves two independent
+   receipts — the user's own Solana buy, and the relayer's Base buyTickets. --- */
+/* Toggle that reveals a chunked purchase's Base relay transactions.
+   Sits directly under the Solana proof: the relationship is one-to-many, and
+   stacking reads as "this, then that" far better than a side-by-side split,
+   which left a tall empty column beside the single Solana card. */
+.txBatchToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  background: rgba(37, 99, 235, 0.08);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.txBatchToggle:hover {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(37, 99, 235, 0.14);
+}
+
+.txBatchToggleLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-blue-300);
+}
+
+/* Surfaces "not everything has landed yet" on the collapsed row, so a user
+   never has to expand just to find out whether the relay finished. */
+.txBatchPendingDot {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+}
+
+.txBatchChevron {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--color-text-faint);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.txBatchChevronOpen {
+  transform: rotate(180deg);
+}
+
+/* Scroll container for the relay batches.
+   max-height is deliberately a fraction of a row: it shows three batches plus a
+   sliver of the fourth, which is what tells the user there is more to scroll
+   without relying on a scrollbar being visible (they are overlaid on macOS). */
+.txBatches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 178px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Indented under the toggle so the nesting is obvious at a glance. */
+  padding-left: var(--space-3);
+  border-left: 1px solid rgba(96, 165, 250, 0.18);
+  /* Room for the scrollbar so it never sits on top of the tx hashes. */
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 165, 250, 0.45) transparent;
+}
+
+.txBatches::-webkit-scrollbar {
+  width: 5px;
+}
+
+.txBatches::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.45);
+}
+
+.txBatches::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Per-batch ticket count, sat next to the BASE label so a user can see at a
+   glance that 15 + 15 + 15 + 15 + 5 adds up to the 65 they bought. */
+.txBatchCount {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-text-faint);
+  text-transform: none;
+}
+
+/* Shorter scroll window on small screens so an expanded batch list doesn't
+   swallow the whole viewport. */
+@media (max-width: 560px) {
+  .txBatches {
+    max-height: 150px;
+  }
+}
+
+.txProof {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'chain icon'
+    'hash  hash';
+  row-gap: 3px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition: transform var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.txProof:hover {
+  transform: translateY(-1px);
+}
+
+.txProofChain {
+  grid-area: chain;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.txProofHash {
+  grid-area: hash;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--color-text);
+}
+
+.txProofIcon {
+  grid-area: icon;
+  font-size: 13px;
+  color: var(--color-text-faint);
+}
+
+/* Solana half: pink-purplish, matching the app's existing violet accent. */
+.txProofSolana {
+  background:
+    linear-gradient(155deg, rgba(168, 85, 247, 0.22), rgba(236, 72, 153, 0.08)) padding-box,
+    linear-gradient(155deg, rgba(168, 85, 247, 0.45), rgba(236, 72, 153, 0.15)) border-box;
+}
+
+.txProofSolana:hover {
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
+.txProofSolana .txProofChain {
+  color: var(--color-violet-300);
+}
+
+/* Base half: dark blue gradient, same treatment mirrored in blue. */
+.txProofBase {
+  background:
+    linear-gradient(155deg, rgba(37, 99, 235, 0.22), rgba(30, 58, 138, 0.1)) padding-box,
+    linear-gradient(155deg, rgba(96, 165, 250, 0.45), rgba(30, 58, 138, 0.2)) border-box;
+}
+
+.txProofBase:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.txProofBase .txProofChain {
+  color: var(--color-blue-300);
+}
+
+/* Base half, not confirmed yet — the relay hasn't landed, so there is no tx to link to. */
+.txProofPending {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.03) padding-box, var(--color-border) border-box;
+}
+
+.txProofPending:hover {
+  transform: none;
+}
+
+.txProofPendingLabel {
+  grid-area: hash;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-faint);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* --- Detail header --- */
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  margin-bottom: var(--space-6);
+  min-height: 38px;
+}
+
+.backButton {
+  position: absolute;
+  left: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 17px;
+}
+
+.detailTitle {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+/* --- Upcoming hero --- */
+.upcomingHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(160deg, rgba(168, 85, 247, 0.16), rgba(255, 255, 255, 0.02)) padding-box,
+    linear-gradient(160deg, rgba(168, 85, 247, 0.5), rgba(212, 175, 55, 0.25)) border-box;
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-violet-glow);
+  text-align: center;
+  margin-bottom: var(--space-4);
+}
+
+.heroHeadline {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--color-text-dim);
+  margin-top: var(--space-2);
+}
+
+.heroSub {
+  font-size: 13px;
+  color: var(--color-text-dim);
+}
+
+/* --- Neutral (results not yet revealed / grading) hero --- */
+.neutralHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  text-align: center;
+  margin-bottom: var(--space-4);
+}
+
+.resultsHeadline {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.placeholderRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dot,
+.dotBonus {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--color-border-strong);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dotBonus {
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+.gradingNotice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.checkButton {
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-full);
+  background: #fff;
+  color: #0a0a0a;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 28px rgba(255, 255, 255, 0.35);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.checkButton:hover {
+  transform: translateY(-2px);
+}
+
+/* --- Won hero --- */
+.wonHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-6);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(160deg, rgba(52, 211, 153, 0.18), rgba(52, 211, 153, 0.04));
+  border: 1px solid rgba(52, 211, 153, 0.32);
+  box-shadow: 0 0 32px rgba(52, 211, 153, 0.12);
+  text-align: center;
+  margin-bottom: var(--space-4);
+}
+
+.wonHeadline {
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--color-success);
+  margin-top: var(--space-2);
+}
+
+.winningLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.winningRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wonDate {
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.statGrid {
+  display: flex;
+  width: 100%;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-5);
+  margin-top: var(--space-3);
+}
+
+.statBlock {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.statLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.statValue {
+  font-size: 19px;
+  font-weight: 900;
+  color: var(--color-text);
+}
+
+.statValueMuted {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-faint);
+  font-style: italic;
+}
+
+.claimButton {
+  margin-top: var(--space-2);
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-full);
+  background: #fff;
+  color: #0a0a0a;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 28px rgba(255, 255, 255, 0.3);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.claimButton:hover {
+  transform: translateY(-2px);
+}

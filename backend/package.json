@@ -1,13 +1,52 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "LordsPot Backend Relayer",
+  "main": "dist/api/server.js",
   "scripts": {
+    "dev": "tsx watch src/api/server.ts",
+    "dev:api": "tsx watch src/api/server.ts",
+    "dev:worker": "tsx watch src/workers/index.ts",
+    "dev:cron": "tsx watch src/cron/index.ts",
+    "build": "tsc",
+    "start:api": "tsx src/api/server.ts",
+    "start:worker": "tsx src/workers/index.ts",
+    "start:cron": "tsx src/cron/index.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@solana/spl-token": "^0.4.15",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "bullmq": "^5.78.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
+    "ioredis": "^5.6.1",
+    "pg": "^8.21.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.9.3",
+    "@types/pg": "^8.20.0",
+    "prisma": "^7.8.0",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^6.0.3"
+  }
 }

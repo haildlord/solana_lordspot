@@ -1,0 +1,27 @@
+# Secrets — never send to AI context
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Keys & wallets
+*.pem
+*.key
+*.p12
+*.pfx
+id.json
+**/id.json
+*-keypair.json
+**/*-keypair.json
+**/keypair.json
+.secrets/
+**/.secrets/
+
+# Local overrides
+.env.local
+.env.*.local
+**/.env.local
+**/.env.*.local
+deployer-keypair.json

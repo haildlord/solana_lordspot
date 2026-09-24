@@ -5,3 +5,10 @@ target
 node_modules
 test-ledger
 .yarn
+.env
+.surfpool
+surfnet-temp.sqlite
+surfnet-state.sqlite
+observations.md
+deployer-keypair.json
+buffer-keypair.json

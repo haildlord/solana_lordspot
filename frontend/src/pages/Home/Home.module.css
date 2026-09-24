@@ -1,0 +1,367 @@
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-4) var(--space-16);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pausedBanner {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-10);
+}
+
+.badges {
+  display: flex;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.buyCard {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  padding: var(--space-6);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-card);
+}
+
+.stepperRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.stepperLabel {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.chips {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.chip {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.chip:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.chipActive {
+  color: #0a0a0c;
+  background: #fff;
+  border-color: transparent;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.stepper > button:first-child,
+.stepper > button:nth-child(3) {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-dim);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.stepper > button:first-child:hover:not(:disabled),
+.stepper > button:nth-child(3):hover:not(:disabled) {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.stepper > button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Explicit box so it never falls back to the browser's default number-input
+   chrome (that default outline/border is what showed up as an unstyled
+   "purple box" on focus in some browsers). Plain type="text" + inputMode —
+   see Home.tsx for why: a real type="number" input concatenates keystrokes
+   onto its old value instead of replacing it without extra handling. */
+.stepper input {
+  width: 56px;
+  height: 36px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.stepper input:focus {
+  border-color: var(--color-border-strong);
+}
+
+.stepperHint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-faint);
+  margin: 0 0 var(--space-4);
+  text-align: center;
+}
+
+.staged {
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.stagedHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  padding: var(--space-3);
+}
+
+.clearAll {
+  color: var(--color-danger);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.stagedList {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--color-border);
+}
+
+.stagedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px 10px;
+}
+
+.stagedRow:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+
+.stagedBalls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.incompleteTag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-text-faint);
+  margin-left: 4px;
+}
+
+.editTicketButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.editTicketButton:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.editorToggle {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+  padding: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.editorToggle:hover {
+  color: var(--color-text);
+}
+
+.costBreakdown {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.costRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  padding: 3px 0;
+}
+
+/* "FREE" relay fee — the single strongest differentiator on this page
+   (competitors charge ~$0.21 flat), so it gets the gold treatment rather than
+   reading as just another grey number. The sweep animation runs once every few
+   seconds to catch the eye without becoming a distraction. */
+.freeBadge {
+  position: relative;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--gradient-gold);
+  color: #1a1200;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  box-shadow: var(--shadow-gold-glow);
+}
+
+.freeBadge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.75) 50%,
+    transparent 80%
+  );
+  transform: translateX(-120%);
+  animation: freeShine 3.5s ease-in-out infinite;
+}
+
+@keyframes freeShine {
+  0%, 55% { transform: translateX(-120%); }
+  100%    { transform: translateX(120%); }
+}
+
+/* Respect users who ask the OS to reduce motion — the gold still reads as
+   special without anything moving. */
+@media (prefers-reduced-motion: reduce) {
+  .freeBadge::after { animation: none; }
+}
+
+.costTotal {
+  margin-top: 2px;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+/* Shown in the cost panel, above the button, so the user learns they are short
+   BEFORE they reach for Buy — not after a wallet popup and an on-chain revert. */
+.costShortfall {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.1);
+  font-size: 11px;
+  font-weight: 700;
+  color: #fca5a5;
+}
+
+.costHint {
+  margin: var(--space-2) 0 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-faint);
+}
+
+/* Primary CTA — plain white, matching the same treatment already used for
+   the app's other primary actions (Tickets page's claim/check buttons). */
+.buyButton {
+  width: 100%;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: #0a0a0a;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 0 28px rgba(255, 255, 255, 0.3);
+  transition: transform var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.buyButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.buyButton:disabled {
+  opacity: 0.4;
+  box-shadow: none;
+}
