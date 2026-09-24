@@ -37,7 +37,8 @@ import { onShutdown } from '../lib/shutdown';
  * Solana rejects transactions whose blockhash has expired, permanently.
  */
 
-const POLL_MS = 10_000;
+const POLL_MS = 10_000;          // while vouchers are live
+const IDLE_POLL_MS = 2 * 60_000; // none pending; see scheduleNext()
 // Extra confirmation depth past lastValidBlockHeight before declaring death —
 // covers RPC nodes that are slightly behind the tip.
 const EXPIRY_BUFFER_BLOCKS = 150n;
@@ -77,7 +78,8 @@ async function releaseClaim(claimId: string, status: 'EXPIRED' | 'FAILED', reaso
   console.warn(`[payout] Claim ${claimId} → ${status}: ${reason.slice(0, 200)}`);
 }
 
-export async function runPayoutConfirmerTick(): Promise<void> {
+/** Returns how many vouchers were pending, so the caller can pace the next tick. */
+export async function runPayoutConfirmerTick(): Promise<number> {
 
   // NO `take` LIMIT — deliberately. The scan window below is derived from the
   // OLDEST pending voucher, so examining only a page of them would compute a
@@ -88,7 +90,7 @@ export async function runPayoutConfirmerTick(): Promise<void> {
     orderBy: { createdAt: 'asc' },
   });
 
-  if (pending.length === 0) return;
+  if (pending.length === 0) return 0;
 
   const connection = solanaService.getConnection();
 
@@ -106,7 +108,10 @@ export async function runPayoutConfirmerTick(): Promise<void> {
     // Deliberately bail out entirely rather than fall through to the expiry
     // branch below — an unscanned chain must never be read as an empty one.
     console.error('[payout] Chain sweep failed — resolving nothing this tick:', err);
-    return;
+    // Report the pending count, not 0: there IS work, the sweep just could not
+    // see it. Returning 0 would tell the scheduler to go idle and leave live
+    // vouchers unresolved for minutes over what is usually a transient RPC blip.
+    return pending.length;
   }
 
   // An incomplete sweep can still CONFIRM (finding a claim proves it landed),
@@ -209,25 +214,54 @@ export async function runPayoutConfirmerTick(): Promise<void> {
       console.error(`[payout] Error resolving claim ${claim.id}:`, err);
     }
   }
+
+  return pending.length;
 }
 
-let intervalHandle: NodeJS.Timeout | null = null;
-let tickInFlight = false;
+let timer: NodeJS.Timeout | null = null;
+let stopped = false;
+
+/**
+ * Self-rescheduling loop instead of a fixed setInterval.
+ *
+ * This fired every 10s unconditionally — 360 database queries an hour asking
+ * whether any voucher was pending, and the answer is "no" almost all of the
+ * time. A voucher only exists in the ~90 seconds between a user requesting a
+ * claim and it landing or expiring.
+ *
+ * Fast while vouchers are live, slow when none are. Responsiveness during an
+ * actual claim is unchanged, which is what matters: the whole job is resolving
+ * a voucher inside its short validity window.
+ *
+ * Self-rescheduling also makes overlapping ticks impossible by construction —
+ * the next tick is only scheduled once the previous one has finished — so the
+ * old `tickInFlight` flag is no longer needed. That matters more here than for
+ * most loops, because a tick does a chain sweep that can take seconds.
+ */
+function scheduleNext(delayMs: number): void {
+  if (stopped) return;
+  timer = setTimeout(() => {
+    runPayoutConfirmerTick()
+      .then((pending) => scheduleNext(pending > 0 ? POLL_MS : IDLE_POLL_MS)) // * 10 Secs
+      .catch((err) => {
+        console.error('[payout] Tick failed:', err);
+        scheduleNext(IDLE_POLL_MS);
+      });
+  }, delayMs);
+}
 
 export function startPayoutConfirmer(): void {
-  if (intervalHandle) return; // singleton per process
+  if (timer || stopped) return; // singleton per process
 
-  intervalHandle = setInterval(() => {
-    if (tickInFlight) return;
-    tickInFlight = true;
-    runPayoutConfirmerTick()
-      .catch((err) => console.error('[payout] Tick failed:', err))
-      .finally(() => { tickInFlight = false; });
-  }, POLL_MS); // * 10 Secs
+  // First tick waits one full interval, matching the old setInterval behaviour.
+  scheduleNext(POLL_MS);
 
   onShutdown('payout-confirmer', () => {
-    if (intervalHandle) clearInterval(intervalHandle);
+    stopped = true;
+    if (timer) clearTimeout(timer);
   });
 
-  console.log(`[payout] Claim voucher confirmer online (every ${POLL_MS / 1000}s)`);
+  console.log(
+    `[payout] Claim voucher confirmer online (${POLL_MS / 1000}s while vouchers are live, ${IDLE_POLL_MS / 1000}s when idle)`
+  );
 }

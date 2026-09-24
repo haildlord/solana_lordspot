@@ -19,7 +19,8 @@ import { onShutdown } from '../lib/shutdown';
  * this loop (inline + standalone worker) stay idempotent.
  */
 
-const POLL_MS = 5_000;                 // 5 secs
+const POLL_MS = 5_000;                 // 5 secs — while orders are actually in flight
+const IDLE_POLL_MS = 2 * 60_000;       // 2 mins — nothing in flight; see scheduleNext()
 const PENDING_TIMEOUT_MS = 2 * 60_000; // 2 minutes
 const BATCH_SIZE = 50;
 
@@ -222,7 +223,8 @@ async function confirmOne(order: SubmittedOrder): Promise<void> {
   await bounceToRetry(order, cls.reason);
 }
 
-export async function runConfirmerTick(): Promise<void> {
+/** Returns how many orders were found, so the caller can pace the next tick. */
+export async function runConfirmerTick(): Promise<number> {
 
   const orders = await prisma.relayOrder.findMany({
     where: { status: 'BASE_SUBMITTED' },
@@ -239,33 +241,55 @@ export async function runConfirmerTick(): Promise<void> {
     }
   }
 
+  return orders.length;
 }
 
 
 
-let intervalId : NodeJS.Timeout | null = null;
-let tickInFlight = false;
+let timer: NodeJS.Timeout | null = null;
+let stopped = false;
+
+/**
+ * Self-rescheduling loop instead of a fixed setInterval.
+ *
+ * This used to fire every 5s unconditionally — 720 database queries an hour,
+ * forever, and the largest single source of idle load in the backend. The tick
+ * now reports how many orders it found and paces itself on that: fast while
+ * there is anything in flight, slow when there is not. A busy period is exactly
+ * as responsive as before; an empty one costs 30 queries an hour instead of 720.
+ *
+ * Self-rescheduling (rather than setInterval + a `tickInFlight` flag) also makes
+ * overlapping ticks structurally impossible: the next one is only scheduled once
+ * the previous has finished, so a slow tick can never stack up behind itself.
+ */
+function scheduleNext(delayMs: number): void {
+  if (stopped) return;
+  timer = setTimeout(() => {
+    runConfirmerTick()
+      .then((found) => scheduleNext(found > 0 ? POLL_MS : IDLE_POLL_MS))
+      .catch((err) => {
+        console.error('[confirmer] Tick failed:', err);
+        // Back off on failure too. A tick that threw is usually the database or
+        // RPC being unreachable, and hammering it every 5s makes that worse.
+        scheduleNext(IDLE_POLL_MS);
+      });
+  }, delayMs);
+}
 
 export function startBaseConfirmer(): void {
-  
-  if (intervalId) return; // singleton per process
 
-  // `intervalId` is assigned immediately when `setInterval()` is called — before the first tick even runs.
-  intervalId = setInterval(() => {                                      // This line runs RIGHT NOW
-    
-    if (tickInFlight) return;   // This is a good guard so that even if one tick takes longer than 5s, the next one doesn't start
+  if (timer || stopped) return; // singleton per process
 
-    tickInFlight = true;
-    
-    runConfirmerTick()                                                  // This runs LATER (after every 5 secs)
-      .catch((err) => console.error('[confirmer] Tick failed:', err))
-      .finally(() => { tickInFlight = false; });
-    }, POLL_MS);
+  // First tick waits one full interval, matching the old setInterval behaviour.
+  scheduleNext(POLL_MS);
 
   onShutdown('base-confirmer', () => {
-    if (intervalId) clearInterval(intervalId);
+    stopped = true;
+    if (timer) clearTimeout(timer);
   });
 
-  console.log(`[confirmer] Base receipt confirmer online (every ${POLL_MS / 1000}s)`);
+  console.log(
+    `[confirmer] Base receipt confirmer online (${POLL_MS / 1000}s while busy, ${IDLE_POLL_MS / 1000}s when idle)`
+  );
 
 }
