@@ -32,9 +32,7 @@ interface IJackpot {
         bytes32 _source
     ) external returns (uint256[] memory ticketIds);
 
-    // -> uncomment it in production
-    // function claimWinnings(uint256[] calldata _userTicketIds) external;
-    function claimWinnings(uint256[] memory _userTicketIds, uint256[] memory _packedTickets, uint256 _winningPackedTicket, uint256 _winningBallMax, uint256 _winningAmount) external;
+    function claimWinnings(uint256[] calldata _userTicketIds) external;
 }
  
 contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
@@ -161,16 +159,14 @@ contract LordsPotBaseVault is Pausable, Ownable, IERC721Receiver {
      *      and chunk batches to keep the blast radius small.
      * @param _ticketIds Megapot ticket NFT ids (NOT LordsPot order ids) to claim.
      */
-    // -> this is gonna be in production :
-    // function claimWinnings(uint256[] calldata _ticketIds) external onlyRelayer {
-    function claimWinnings(uint256[] calldata _ticketIds, uint256[] calldata _packedTickets, uint256 _winningPackedTicket, uint256 _winningBallMax, uint256 _winningAmount) external onlyRelayer {
+    function claimWinnings(uint256[] calldata _ticketIds) external onlyRelayer {
+
         if (_ticketIds.length == 0) revert NoTicketsToClaim();
 
         IERC20 usdc = IERC20(vaultInfo.usdcAddress);
         uint256 balanceBefore = usdc.balanceOf(address(this));      // 1. CHECK (snapshot)
-        // -> uncomment this in production
-        // vaultInfo.megapotAddress.claimWinnings(_ticketIds);      // 2. INTERACTION (trusted, nonReentrant)
-        vaultInfo.megapotAddress.claimWinnings(_ticketIds, _packedTickets, _winningPackedTicket, _winningBallMax, _winningAmount);
+
+        vaultInfo.megapotAddress.claimWinnings(_ticketIds);      // 2. INTERACTION (trusted, nonReentrant)
 
         uint256 harvested = usdc.balanceOf(address(this)) - balanceBefore;
         emit WinningsHarvested(_ticketIds.length, harvested);

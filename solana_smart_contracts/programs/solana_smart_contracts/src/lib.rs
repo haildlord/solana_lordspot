@@ -60,7 +60,7 @@ pub mod solana_smart_contracts {
     }
     // * The Most Dangerous Function, admin needs to be very carefull, read all the below comments one mistake and protocol will be stuck :
     // * WARNING : Before migrating the state make sure you go and increment below else migration wont work : 
-    // *    `++STATE_VERSION` which is a `const` variable.
+    // *    `++STATE_VERSION` which is a `const` variable - by redeploying after manual change.
     // *    const `LEGACY_STATE_SIZE` update it to == to the old LordsPotState length. 
     // *        -- that is to say before calling `migrate_state` with updated UncheckedAccount, what was its old `LordsPotState` size.
     pub fn migrate_state(
