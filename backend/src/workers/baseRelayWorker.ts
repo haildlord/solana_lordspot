@@ -1,9 +1,9 @@
 import { Worker, Job } from 'bullmq';
-import { ethers } from 'ethers';
 import { OrderStatus } from '../../generated/prisma/client';
 import { redisConnection } from '../lib/redis';
 import { prisma } from '../lib/db';
 import { config } from '../lib/config';
+import { deriveChunkOrderId } from '../lib/ticketIds';
 import { baseService } from '../services/baseService';
 import { megapotService } from '../services/megapotService';
 import { finalizeOrderSuccess, classifyMinedRevert } from './baseConfirmer';
@@ -41,22 +41,9 @@ interface ChunkTicket {
   bonusBall: number;
 }
 
-/**
- * The vault's isOrderFulfilled[orderId] guard is per-orderId, not per-order-hash
- * — reusing the order's own hash for every chunk would mean chunk 1 marks it
- * fulfilled and every later chunk of the SAME order reverts with
- * OrderAlreadyProcessed. Each chunk needs its own id.
- *
- * Derived from the sorted ticket ids actually in the chunk (not e.g. a chunk
- * index) so it's stable across retries: if the exact same set of tickets ends
- * up bundled together again after a crash/retry, it gets the same id, and the
- * OrderAlreadyProcessed recovery path below can find and recover a landed-but-
- * lost-track-of tx — the same safety property the single-tx model already had.
- */
-function deriveChunkOrderId(chunk: ChunkTicket[]): string {
-  const key = chunk.map((t) => t.id).sort().join(',');
-  return ethers.keccak256(ethers.toUtf8Bytes(key));
-}
+// Each chunk is sent to the vault under its own orderId, derived from its
+// ticket ids — which are themselves derived from the Solana tx signature, so the
+// orderId is unique per tx and survives a DB rebuild. See lib/ticketIds.ts.
 
 /** Bounded poll for a transaction receipt — returns null on timeout, never throws on a plain "still pending". */
 async function waitForReceipt(txHash: string) {
@@ -288,9 +275,16 @@ export const baseRelayWorker = new Worker(
       // this same order BEFORE building any new chunk from it.
       await resolveInFlightBatches(hash);
 
+      // orderBy is load-bearing: chunk boundaries (and so each chunk's orderId)
+      // come from this list's order. Without it Postgres returns rows in
+      // physical order, which shifts after the relayBatchId updates, so a retry
+      // could regroup the same tickets into different chunks and mint different
+      // orderIds. Ticket ids are zero-padded by purchase index, so 'asc' is
+      // purchase order — the same cut points on every pass.
       const pendingTickets = await prisma.ticket.findMany({
         where: { orderHash: hash, megapotNftId: null, relayBatchId: null },
         select: { id: true, normalBalls: true, bonusBall: true },
+        orderBy: { id: 'asc' },
       });
 
       if (pendingTickets.length > 0) {

@@ -1194,6 +1194,10 @@ export type SolanaSmartContracts = {
         {
           "name": "maxClaimAmount",
           "type": "u64"
+        },
+        {
+          "name": "ticketPrice",
+          "type": "u64"
         }
       ]
     },
@@ -1675,6 +1679,16 @@ export type SolanaSmartContracts = {
       "code": 6022,
       "name": "invalidTreasuryAuthority",
       "msg": "treasury_authority must not be the default (all-zero) pubkey."
+    },
+    {
+      "code": 6023,
+      "name": "sameAsPreviousTreasury",
+      "msg": "treasury_authority is already the current treasury."
+    },
+    {
+      "code": 6024,
+      "name": "invalidTicketPrice",
+      "msg": "ticket_price must be greater than zero."
     }
   ],
   "types": [

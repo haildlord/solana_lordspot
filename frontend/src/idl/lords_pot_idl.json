@@ -1188,6 +1188,10 @@
         {
           "name": "max_claim_amount",
           "type": "u64"
+        },
+        {
+          "name": "ticket_price",
+          "type": "u64"
         }
       ]
     },
@@ -1669,6 +1673,16 @@
       "code": 6022,
       "name": "InvalidTreasuryAuthority",
       "msg": "treasury_authority must not be the default (all-zero) pubkey."
+    },
+    {
+      "code": 6023,
+      "name": "SameAsPreviousTreasury",
+      "msg": "treasury_authority is already the current treasury."
+    },
+    {
+      "code": 6024,
+      "name": "InvalidTicketPrice",
+      "msg": "ticket_price must be greater than zero."
     }
   ],
   "types": [

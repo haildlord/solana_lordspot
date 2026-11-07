@@ -202,13 +202,17 @@ module.exports = async function (provider: anchor.AnchorProvider) {
         !fresh.relayFeePerTicket.eq(RELAY_FEE_PER_TICKET) ||
         !fresh.feeRecipient.equals(FEE_RECIPIENT) ||
         fresh.maxTicketsPerPurchase !== MAX_TICKETS_PER_PURCHASE ||
-        !fresh.maxClaimAmount.eq(MAX_CLAIM_AMOUNT);
+        !fresh.maxClaimAmount.eq(MAX_CLAIM_AMOUNT) ||
+        !fresh.ticketPrice.eq(TICKET_PRICE);
 
       if (drift) {
         console.log(`[Config]: on-chain relay config differs from deploy.ts — syncing.`);
         console.log(`  fee/ticket : ${fresh.relayFeePerTicket.toString()} -> ${RELAY_FEE_PER_TICKET.toString()}`);
         console.log(`  fee/base   : ${fresh.relayFeeBase.toString()} -> ${RELAY_FEE_BASE.toString()}`);
         console.log(`  max tkts/ix: ${fresh.maxTicketsPerPurchase} -> ${MAX_TICKETS_PER_PURCHASE}`);
+        // If you re-priced on-chain by hand, update TICKET_PRICE above too — otherwise
+        // this sync will put the old price back.
+        console.log(`  ticket price: ${fresh.ticketPrice.toString()} -> ${TICKET_PRICE.toString()}`);
 
         const tx = await program.methods
           .setRelayConfig(
@@ -216,7 +220,8 @@ module.exports = async function (provider: anchor.AnchorProvider) {
             RELAY_FEE_PER_TICKET,
             FEE_RECIPIENT,
             MAX_TICKETS_PER_PURCHASE,
-            MAX_CLAIM_AMOUNT
+            MAX_CLAIM_AMOUNT,
+            TICKET_PRICE
           )
           .accounts({ admin: customProvider.wallet.publicKey } as never)
           .rpc();

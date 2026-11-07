@@ -260,9 +260,14 @@ Current treasury signs, new treasury signs, `treasury_authority` updates.
 
 ## `set_relay_config`
 
-Changes the fee, fee destination, per-instruction ticket cap, and claim
-ceiling. **NOT paused-gated** — deliberately, so you can re-price during an
-incident (e.g. a sudden Base gas spike) without needing to pause first.
+Changes the fee, fee destination, per-instruction ticket cap, claim
+ceiling, and ticket price. **NOT paused-gated** — deliberately, so you can
+re-price during an incident (e.g. a sudden Base gas spike) without needing to
+pause first.
+
+**Every field is overwritten on every call.** To change just one thing, pass
+the CURRENT value of all the others (read them with `anchor run view-state`) —
+in particular `ticket_price`, or you will silently re-price the protocol.
 
 ### BEFORE
 
@@ -281,18 +286,43 @@ incident (e.g. a sudden Base gas spike) without needing to pause first.
   `RELAY_FEE_PER_TICKET_USDC`) to match what you're about to set on-chain —
   the frontend does not read these live, it has its own copy for quoting.
   ```
+- [ ] If you're changing `ticket_price`: it must equal what Megapot charges
+  ```
+  per ticket (USDC has 6 decimals — $1.00 = `1_000_000`). The Base vault pays
+  Megapot's price out of its own USDC for every ticket, so a Solana price
+  BELOW Megapot's bleeds the vault on every sale, and one above overcharges
+  users. Must be greater than zero (`InvalidTicketPrice`). It takes effect on
+  the very next `buy_ticket` — including transactions users already signed but
+  that haven't landed yet — so apply it while the protocol is paused if you
+  can (e.g. in the rollover pause).
+  ```
+- [ ] If you're changing `ticket_price`: also update `TICKET_PRICE` in
+  ```
+  `migrations/deploy.ts`, or the next `anchor migrate` will sync the OLD price
+  back onto the chain.
+  ```
+- [ ] Upgrade the program BEFORE running a `deploy.ts` that passes the new
+  ```
+  `ticket_price` argument. An old program silently ignores the extra argument
+  (Anchor does not require instruction data to be fully consumed), so the call
+  would report success without changing anything.
+  ```
 - [ ] Signed by admin only.
 
 
 
 ### CALL
 
-Overwrites relay fee base/per-ticket, fee recipient, ticket cap, and claim
-ceiling in one shot.
+Overwrites relay fee base/per-ticket, fee recipient, ticket cap, claim
+ceiling, and ticket price in one shot.
 
 ### AFTER
 
-- [ ] Fetch state, confirm every field landed as intended.
+- [ ] Fetch state, confirm every field landed as intended (`ticketPrice` too).
+- [ ] The frontend reads `ticket_price` from the chain, so a new price shows up
+  ```
+  on its own — no frontend constant to change for the price.
+  ```
 - [ ] Deploy the matching frontend constants update — until you do, the UI will
   ```
   quote the OLD fee while the program charges the NEW one (transactions

@@ -8,6 +8,7 @@ import IDL from "../../solana_idl/solana_smart_contracts.json";
 import { prisma } from "../lib/db";
 import { redisConnection } from "../lib/redis";
 import { baseRelayQueue } from "../lib/queues";
+import { makeTicketId } from "../lib/ticketIds";
 import { UnrecoverableError } from "bullmq";
 
 const PROGRAM_ID = new PublicKey((IDL as any).address);
@@ -107,7 +108,12 @@ const ticketWorker = new Worker(
                     lastBought: new Date(timestamp.toNumber() * 1000),
                     status: "QUEUED",
                     tickets: {
-                        create: tickets_data.map((ticket: { bonus_ball: number; normal_ball: number[] }) => ({
+                        create: tickets_data.map((ticket: { bonus_ball: number; normal_ball: number[] }, index: number) => ({
+                            // Derived from the Solana tx, NOT a random uuid: the Base
+                            // orderId of every relay chunk is built from these ids, so
+                            // re-ingesting this same tx must give back the same ids
+                            // (see lib/ticketIds.ts).
+                            id: makeTicketId(signature, index),
                             bonusBall: ticket.bonus_ball,
                             normalBalls: Array.from(ticket.normal_ball),
                         })),

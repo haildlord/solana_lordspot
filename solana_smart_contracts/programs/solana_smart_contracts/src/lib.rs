@@ -184,6 +184,7 @@ pub mod solana_smart_contracts {
         let signer = ctx.accounts.authority.key();
         let state = &mut ctx.accounts.lords_pot_state;
 
+        // -> remove this if and replace it with the complete else block !
         if state.treasury_authority == Pubkey::default() {
             // Mode 1: one-time bootstrap of a pre-existing account.
             require_keys_eq!(signer, state.admin, LordsPotError::Unauthorized);
@@ -194,7 +195,7 @@ pub mod solana_smart_contracts {
             require_keys_neq!(
                 new_treasury,
                 state.treasury_authority,
-                LordsPotError::SameAsPreviousAdmin
+                LordsPotError::SameAsPreviousTreasury
             );
             msg!("Treasury rotated: {} → {}", state.treasury_authority, new_treasury);
         }
@@ -211,9 +212,11 @@ pub mod solana_smart_contracts {
         relay_fee_per_ticket: u64,
         fee_recipient: Pubkey,
         max_tickets_per_purchase: u8,
-        max_claim_amount: u64
+        max_claim_amount: u64,
+        ticket_price: u64
     ) -> Result<()> {
         validate_relay_config(max_tickets_per_purchase, max_claim_amount)?;
+        validate_ticket_price(ticket_price)?;
 
         let state = &mut ctx.accounts.lords_pot_state;
 
@@ -222,10 +225,16 @@ pub mod solana_smart_contracts {
         state.fee_recipient = fee_recipient;
         state.max_tickets_per_purchase = max_tickets_per_purchase;
         state.max_claim_amount = max_claim_amount;
+        // Lets the price follow Megapot's without a program upgrade. Like every
+        // other field here it is OVERWRITTEN on each call — pass the current
+        // value if you only mean to change something else. Not pause-gated (same
+        // as the rest of this instruction): it applies to the very next
+        // buy_ticket, including ones already signed but not yet landed.
+        state.ticket_price = ticket_price;
 
         msg!(
-            "Relay config updated: base {} + {}/ticket → {}, max {} tickets/ix, max claim {}",
-            relay_fee_base, relay_fee_per_ticket, fee_recipient, max_tickets_per_purchase, max_claim_amount
+            "Relay config updated: base {} + {}/ticket → {}, max {} tickets/ix, max claim {}, ticket price {}",
+            relay_fee_base, relay_fee_per_ticket, fee_recipient, max_tickets_per_purchase, max_claim_amount, ticket_price
         );
         Ok(())
     }
@@ -234,6 +243,7 @@ pub mod solana_smart_contracts {
 
         let ticket_count = tickets.len() as u32;
 
+        // -> do check why duplicates like : HARD_MAX_TICKETS_PER_PURCHASE & max_tickets_per_purchase exists -- I guess need to ask claude
         require!(ticket_count <= HARD_MAX_TICKETS_PER_PURCHASE as u32, LordsPotError::TooManyTickets);
         
         let state = &ctx.accounts.lords_pot_state;
@@ -459,6 +469,15 @@ pub struct VaultWithdrawalEvent {
 #[derive(Accounts)]
 pub struct Initialize<'info> {
 
+    // -> Option B (Recommended Anchor fix — verifies caller is Program Upgrade Authority without hardcoding):
+    // ->   #[account(
+    // ->       mut,
+    // ->       constraint = program_data.upgrade_authority_address == Some(signer.key()) @ LordsPotError::Unauthorized
+    // ->   )]
+    // ->   pub signer: Signer<'info>,
+    // ->   #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
+    // ->   pub program: Program<'info, crate::program::SolanaSmartContracts>,
+    // ->   pub program_data: Account<'info, ProgramData>,
     #[account(mut)]
     pub signer: Signer<'info>,
 
@@ -804,6 +823,13 @@ fn validate_relay_config(max_tickets_per_purchase: u8, max_claim_amount: u64) ->
     Ok(())
 }
 
+// A zero price would hand out free tickets that the Base vault still pays real
+// USDC for — reject it. (No upper bound: buy_ticket multiplies with checked_mul.)
+fn validate_ticket_price(ticket_price: u64) -> Result<()> {
+    require!(ticket_price > 0, LordsPotError::InvalidTicketPrice);
+    Ok(())
+}
+
 
 // --- ERROR CODES ---
 
@@ -855,4 +881,10 @@ pub enum LordsPotError {
     SameAsPreviousAdmin,
     #[msg("treasury_authority must not be the default (all-zero) pubkey.")]
     InvalidTreasuryAuthority,
+    #[msg("treasury_authority is already the current treasury.")]
+    SameAsPreviousTreasury, // -> updated this as well
+    // New errors go at the END only: Anchor numbers them by position, so
+    // inserting or deleting one in the middle renumbers every error after it.
+    #[msg("ticket_price must be greater than zero.")]
+    InvalidTicketPrice,
 }
